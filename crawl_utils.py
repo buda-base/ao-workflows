@@ -1,6 +1,7 @@
 """
 Routines that support the iiifpres crawl
 """
+import gzip
 import hashlib
 
 import boto3
@@ -18,7 +19,7 @@ VMT_BUDABOM_JSON_KEY: str = 'filename'
 VMT_DIM: str = 'dimensions.json'
 
 class crawl_utils():
-    client = None
+    s3_client = None
     dest_bucket = None
     s3: boto3.resource
 
@@ -26,19 +27,18 @@ class crawl_utils():
         """
         Initialize some invariants
         """
-        self.client = boto3.client('s3')
+        self.s3_client = boto3.client('s3')
         self.s3 = boto3.resource('s3')
         self.dest_bucket = self.s3.Bucket(BUDA_BUCKET)
 
-    def get_dimensions_s3_keys(self, work_rid: str) -> object:
+    def get_dimensions_s3_keys(self, work_rid: str) -> []:
         """
-        Fetches the dimenstop
-        :param bom_path:  full s3 path to BOM
+        Fetches the paths to the dimension files, using BUDA to get the image groups
         :return:
         """
         # Borrowed from v-m-b manifestCommons.py:prolog
         image_repository = ImageRepositoryFactory().repository('s3', VMT_BUDABOM,
-                                                               client=self.client, bucket=self.dest_bucket)
+                                                               client=self.s3_client, bucket=self.dest_bucket)
         vol_infos: [] = VolumeInfoBUDA(image_repository).fetch(work_rid)
 
         md5 = hashlib.md5(str.encode(work_rid))
@@ -46,11 +46,19 @@ class crawl_utils():
 
         return [f"{BUDA_PREFIX}{two}/{work_rid}/images/{work_rid}-{x.imageGroupID}/{VMT_DIM}" for x in vol_infos]
 
-    def get_dimension_values(self, dim_s3_path: str):
-        pass
+    def get_dimension_values(self, dim_s3_path: str) -> [] :
+        """
+        Download, decompress, and deserialize a dimensions.json
+        :param dim_s3_path:
+        :return:
+        """
+        import io
+        dim_stream = io.BytesIO()
+        self.s3_client.download_fileobj(BUDA_BUCKET, dim_s3_path, dim_stream)
+        dim_stream.seek(0)
+        dims: str = gzip.decompress(dim_stream.read()).decode()
+        return json.loads(dims)
 
-if __name__ == '__main__':
-    fff = crawl_utils()
-    bloop = fff.get_dimensions_s3_keys('W10736')
-    print(bloop)
+
+
 
