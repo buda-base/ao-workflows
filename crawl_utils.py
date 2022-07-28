@@ -1,0 +1,56 @@
+"""
+Routines that support the iiifpres crawl
+"""
+import hashlib
+
+import boto3
+import json
+
+from v_m_b.ImageRepository.ImageRepositoryFactory import ImageRepositoryFactory
+from v_m_b.VolumeInfo.VolumeInfoBuda import VolumeInfoBUDA
+
+BUDA_BUCKET = "archive.tbrc.org"
+BUDA_PREFIX = "Works/"
+
+# See v-m-b manifestcommons
+VMT_BUDABOM: str = 'fileList.json'
+VMT_BUDABOM_JSON_KEY: str = 'filename'
+VMT_DIM: str = 'dimensions.json'
+
+class crawl_utils():
+    client = None
+    dest_bucket = None
+    s3: boto3.resource
+
+    def __init__(self):
+        """
+        Initialize some invariants
+        """
+        self.client = boto3.client('s3')
+        self.s3 = boto3.resource('s3')
+        self.dest_bucket = self.s3.Bucket(BUDA_BUCKET)
+
+    def get_dimensions_s3_keys(self, work_rid: str) -> object:
+        """
+        Fetches the dimenstop
+        :param bom_path:  full s3 path to BOM
+        :return:
+        """
+        # Borrowed from v-m-b manifestCommons.py:prolog
+        image_repository = ImageRepositoryFactory().repository('s3', VMT_BUDABOM,
+                                                               client=self.client, bucket=self.dest_bucket)
+        vol_infos: [] = VolumeInfoBUDA(image_repository).fetch(work_rid)
+
+        md5 = hashlib.md5(str.encode(work_rid))
+        two = md5.hexdigest()[:2]
+
+        return [f"{BUDA_PREFIX}{two}/{work_rid}/images/{work_rid}-{x.imageGroupID}/{VMT_DIM}" for x in vol_infos]
+
+    def get_dimension_values(self, dim_s3_path: str):
+        pass
+
+if __name__ == '__main__':
+    fff = crawl_utils()
+    bloop = fff.get_dimensions_s3_keys('W10736')
+    print(bloop)
+

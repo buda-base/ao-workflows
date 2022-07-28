@@ -1,6 +1,8 @@
 from dagster import asset
 
-@asset
+@asset(
+    metadata={"owner":"jmk@tbrc.org","domain": "ao"}
+)
 def works():
     work_list:[] = []
     with open('data/scans.lst', 'r') as df:
