@@ -18,6 +18,7 @@ VMT_BUDABOM: str = 'fileList.json'
 VMT_BUDABOM_JSON_KEY: str = 'filename'
 VMT_DIM: str = 'dimensions.json'
 
+
 class crawl_utils():
     s3_client = None
     dest_bucket = None
@@ -46,11 +47,11 @@ class crawl_utils():
 
         return [f"{BUDA_PREFIX}{two}/{work_rid}/images/{work_rid}-{x.imageGroupID}/{VMT_DIM}" for x in vol_infos]
 
-    def get_dimension_values(self, dim_s3_path: str) -> [] :
+    def get_dimension_values(self, dim_s3_path: str) -> []:
         """
         Download, decompress, and deserialize a dimensions.json
-        :param dim_s3_path:
-        :return:
+        :param dim_s3_path:list of dictionaries
+        :return: list of file infos
         """
         import io
         dim_stream = io.BytesIO()
@@ -58,7 +59,3 @@ class crawl_utils():
         dim_stream.seek(0)
         dims: str = gzip.decompress(dim_stream.read()).decode()
         return json.loads(dims)
-
-
-
-

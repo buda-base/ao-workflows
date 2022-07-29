@@ -6,6 +6,6 @@ from dagster import asset
 def works():
     work_list:[] = []
     with open('data/scans.lst', 'r') as df:
-        work_list = df.readlines()
+        work_list = [x.strip() for x in df.readlines()]
 
     return work_list

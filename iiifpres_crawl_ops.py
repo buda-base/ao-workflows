@@ -1,7 +1,7 @@
 """Operations for the iiifpres crawl"""
 
-from dagster import op, job, get_dagster_logger, List, Dict
-from bdrc_works import works
+from dagster import op, job, get_dagster_logger, List, Dict, String, Any
+
 from crawl_utils import crawl_utils
 
 s3_session: crawl_utils = crawl_utils()
@@ -9,26 +9,30 @@ s3_session: crawl_utils = crawl_utils()
 
 # TODO: Defines ins and outs for ops
 @op
-def get_works() -> List:
+def get_works() -> List[String]:
     """
     One operation to get all the works. Just uses the asset
-    :return: works asset
+    :return: works
     """
-    return works()
+
+    work_list: [] = []
+    with open('data/scans.lst', 'r') as df:
+        work_list = [x.strip() for x in df.readlines()]
+
+    return work_list[0:2]
 
 
-@op
-def get_image_groups(work: str) -> List:
+def get_image_groups(work: str) -> []:
     """
     Return the s3 paths to the image groups in the work
     :param work:
     :return: keys for each image group's dimensions.json
     """
-    s3_session.get_dimensions_s3_keys(work)
+    return s3_session.get_dimensions_s3_keys(work)
 
 
-@op
-def test_work_json(work: str) -> Dict:
+
+def test_work_json(work: str) -> {}:
     """
     Test all the work's jsons
     :param work:
@@ -46,13 +50,13 @@ def validate_dims(dims: []) -> ():
     """
 
     # Test 1: Are all the file names in order?
-    filenames:[] = [ x["filename"] for x in dims]
-    sort_test_pass = sorted(filenames)
+    filenames: [] = [x["filename"] for x in dims]
+    sort_test_pass = all(filenames[i] < filenames[i+1] for i in range(len(filenames) - 1))
 
     # Test 2: does each filename have a valid height and width?
     has_image_dims: bool = all([validate_dim_int(x, "height") and validate_dim_int(x, "width") for x in dims])
 
-    return sort_test_pass and has_image_dims , f"sorted:{sort_test_pass} has_dims:{has_image_dims}"
+    return sort_test_pass and has_image_dims, f"sorted:{sort_test_pass} has_dims:{has_image_dims}"
 
 
 def validate_dim_int(dict_entry: {}, attr: str) -> bool:
@@ -70,26 +74,34 @@ def validate_dim_int(dict_entry: {}, attr: str) -> bool:
     return False
 
 
-@op
 def test_ig_dim(dim_s3_path: str) -> bool:
     """
 
     :param dim_s3_path:
     :return:
     """
-    dim_values:[] = crawl_utils.get_dimension_values(dim_s3_path)
+    dim_values: [] = s3_session.get_dimension_values(dim_s3_path)
     #
     # IMPORTANT: These are the set of validations we perform:
-    valid, reasons =  validate_dims(dim_values)
-    get_dagster_logger().info(f"valid:{valid}, path:{dim_s3_path} reasons:{reasons}")
+    valid, reasons = validate_dims(dim_values)
+    # get_dagster_logger().info(f"valid:{valid}, path:{dim_s3_path} reasons:{reasons}")
     return valid
 
 
+@op
+def test_works(ws: List[String]) -> List[Dict]:
+    out: [] = []
+    for w in ws:
+        aresult: {} = test_work_json(w)
+        get_dagster_logger().info(aresult)
+        out.append(aresult)
+    return out
 
 
 @job
 def iiifpres_crawl():
-    get_works().map(test_work_json)
+    w = get_works()
+    test_works(w)
 
 
 if __name__ == '__main__':
