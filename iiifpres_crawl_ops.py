@@ -1,6 +1,6 @@
 """Operations for the iiifpres crawl"""
 import logging
-from datetime import time
+import time
 
 from dagster import op, job, get_dagster_logger, List, Dict, String, Any, repository, asset, define_asset_job
 
@@ -89,14 +89,22 @@ def validate_dims(dims: []) -> ():
     :return:
     """
 
-    # Test 1: Are all the file names in order?
-    filenames: [] = [x["filename"] for x in dims]
-    sort_test_pass = all(filenames[i] < filenames[i+1] for i in range(len(filenames) - 1))
+    sort_test_pass: bool
+    has_image_dims: bool
 
-    # Test 2: does each filename have a valid height and width?
-    has_image_dims: bool = all([validate_dim_int(x, "height") and validate_dim_int(x, "width") for x in dims])
+    try:
+        # Test 1: Are all the file names in order?
+        filenames: [] = [x["filename"] for x in dims]
+        sort_test_pass = all(filenames[i] < filenames[i+1] for i in range(len(filenames) - 1))
 
-    return sort_test_pass and has_image_dims, f"sorted:{sort_test_pass} has_dims:{has_image_dims}"
+        # Test 2: does each filename have a valid height and width?
+        has_image_dims: bool = all([validate_dim_int(x, "height") and validate_dim_int(x, "width") for x in dims])
+        return sort_test_pass and has_image_dims, f"sorted:{sort_test_pass} has_dims:{has_image_dims}"
+    except KeyError:
+        # Probably failed to get anything at all
+        return False, f"{dims}"
+
+
 
 
 def validate_dim_int(dict_entry: {}, attr: str) -> bool:
@@ -124,7 +132,7 @@ def test_ig_dim(dim_s3_path: str) -> bool:
     #
     # IMPORTANT: These are the set of validations we perform:
     valid, reasons = validate_dims(dim_values)
-    # get_dagster_logger().info(f"valid:{valid}, path:{dim_s3_path} reasons:{reasons}")
+    get_dagster_logger().info(f"valid:{valid}, path:{dim_s3_path} reasons:{reasons}")
     return valid
 
 
@@ -132,9 +140,12 @@ def test_ig_dim(dim_s3_path: str) -> bool:
 def test_works(ws: List[String]) -> List[Dict]:
     out: [] = []
     for w in ws:
-        aresult: {} = test_work_json(w)
-        # get_dagster_logger().info(aresult)
-        out.append(aresult)
+        try:
+            aresult: {} = test_work_json(w)
+            # get_dagster_logger().info(aresult)
+            out.append(aresult)
+        finally:
+            pass
     return out
 
 

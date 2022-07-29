@@ -5,7 +5,7 @@ import gzip
 import hashlib
 
 import boto3
-import json
+from botocore.exceptions import ClientError
 
 from v_m_b.ImageRepository.ImageRepositoryFactory import ImageRepositoryFactory
 from v_m_b.VolumeInfo.VolumeInfoBuda import VolumeInfoBUDA
@@ -54,8 +54,16 @@ class crawl_utils():
         :return: list of file infos
         """
         import io
-        dim_stream = io.BytesIO()
-        self.s3_client.download_fileobj(BUDA_BUCKET, dim_s3_path, dim_stream)
-        dim_stream.seek(0)
-        dims: str = gzip.decompress(dim_stream.read()).decode()
-        return json.loads(dims)
+        import json
+
+        operand: str = f"s3://{BUDA_BUCKET}/{dim_s3_path}"
+        try:
+            dim_stream = io.BytesIO()
+            self.s3_client.download_fileobj(BUDA_BUCKET, dim_s3_path, dim_stream)
+            dim_stream.seek(0)
+            dims: str = gzip.decompress(dim_stream.read()).decode()
+            return json.loads(dims)
+        except ClientError as ce:
+            return [{"ERROR": f"S3ClientError {ce}", "object": operand}]
+        except Exception as e:
+            return [{"ERROR": f"Error {e}", "object": operand}]

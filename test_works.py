@@ -1,5 +1,6 @@
 import unittest
 
+import iiifpres_crawl_ops
 from iiifpres_crawl_ops import iiifpres_crawl
 
 
@@ -36,6 +37,27 @@ class MyTestCase(unittest.TestCase):
     @unittest.skip("Thirsty, resource dependent")
     def test_get_obj(self):
         Frelm = self.utils.get_dimension_values('Works/32/W10736/images/W10736-1240/dimensions.json')
+
+    def test_get_obj_fails(self):
+        """
+        test when given non-existent file
+        :return:
+        """
+        badf = self.utils.get_dimension_values('BOGUS_FILE')
+        self.assertEqual(1, len(badf), f"unexpected list {badf}")
+        self.assertIn("ERROR", badf[0].keys())
+        self.assertIn("BOGUS_FILE", badf[0]["object"])
+
+
+    def test_validation_bogus_fails(self):
+        """
+        Test non-existent file returns false validation
+        :return:
+        """
+        badf = self.utils.get_dimension_values('BOGUS_FILE')
+        result, reason = iiifpres_crawl_ops.validate_dims(badf)
+        self.assertFalse(result,"Expected False")
+        self.assertIn("ERROR", reason)
 
     def test_filename_sort_validate_fails(self):
         """
