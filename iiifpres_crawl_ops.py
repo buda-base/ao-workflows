@@ -1,11 +1,51 @@
 """Operations for the iiifpres crawl"""
+import logging
+from datetime import time
 
-from dagster import op, job, get_dagster_logger, List, Dict, String, Any
+from dagster import op, job, get_dagster_logger, List, Dict, String, Any, repository, asset, define_asset_job
 
 from crawl_utils import crawl_utils
 
 s3_session: crawl_utils = crawl_utils()
 
+from dagster import asset
+
+@asset(
+    metadata={"owner":"jmk@tbrc.org","domain": "ao"}
+)
+def works():
+    work_list:[] = []
+    with open('data/scans.lst', 'r') as df:
+        work_list = [x.strip() for x in df.readlines()]
+    get_dagster_logger().info(f"retrieved {len(work_list)} works")
+    return work_list
+
+@asset(
+    metadata={"owner":"jmk@tbrc.org","domain": "ao", "help" : "Contains the status of all the dimensions.json scanned"}
+)
+def scan_results(works):
+    get_dagster_logger().info(f"scanning {len(works)} works")
+    start = time.time()
+    scanned_works =  test_works(works)
+    end = time.time()
+    get_dagster_logger().info("done scanning %d works. Took %12.3 sec" % (len(works), float(end - start)))
+
+    # Because I'm nervous,
+    get_dagster_logger().info(scanned_works)
+    start = time.time()
+    if get_dagster_logger().isEnabledFor(logging.DEBUG):
+        with open('scanlog.json', 'w') as nerv:
+            import json
+            blarg = json.dumps(scanned_works)
+            get_dagster_logger().info(blarg)
+            get_dagster_logger().info("writing log file")
+            nerv.write(blarg)
+
+    end = time.time()
+    get_dagster_logger().info("done writing assets file of %d results. Took %12.3 sec" % (len(works), float(end - start)))
+
+
+    return scanned_works
 
 # TODO: Defines ins and outs for ops
 @op
@@ -93,7 +133,7 @@ def test_works(ws: List[String]) -> List[Dict]:
     out: [] = []
     for w in ws:
         aresult: {} = test_work_json(w)
-        get_dagster_logger().info(aresult)
+        # get_dagster_logger().info(aresult)
         out.append(aresult)
     return out
 
@@ -102,6 +142,12 @@ def test_works(ws: List[String]) -> List[Dict]:
 def iiifpres_crawl():
     w = get_works()
     test_works(w)
+
+scan_works_job= define_asset_job(name="scan_works", selection="scan_results")
+
+@repository
+def iiif_crawl_repo():
+    return [works, scan_results, scan_works_job, iiifpres_crawl]
 
 
 if __name__ == '__main__':
