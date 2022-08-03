@@ -12,7 +12,7 @@ from dagster import asset
 
 
 @asset(
-    metadata={"owner": "jmk@tbrc.org", "domain": "ao"}
+    metadata={"owner": "jimk@tbrc.org", "domain": "ao"}
 )
 def works():
     work_list: [] = []
@@ -61,6 +61,7 @@ def scan_works(works_to_scan) -> List[Dict]:
 
         # Save what we have
     return out
+
 
 def get_image_groups(work: str) -> []:
     """
@@ -133,15 +134,85 @@ def test_ig_dim(dim_s3_path: str) -> bool:
     return valid
 
 
+@asset
+def failed_works(scan_works):
+    """
+    Summarizes the scan_works_job asset job results
+    :return:
+    """
+    failed_works = [i for i in scan_works if not dict(i)['valid']]
+    get_dagster_logger().info(f"Number of failed works {len(failed_works)}")
+    return failed_works
+
+
+@asset
+def failed_image_groups(failed_works):
+    """
+    Extracts each failed image group
+    :param failed_works: scan structures whose 'valid' is False
+    :return []:
+    """
+    # results = [i for i in [x['ig_results'] for x in failed_works ] if not i['valid']]
+    # for x in bb:
+    #     [cc.append(i) for i in x]
+    results:[] = []
+    for f in failed_works:
+        get_dagster_logger().info(f"One works worth of ig results {f['ig_results']}")
+        for ig_result in f['ig_results']:
+            if not ig_result['valid']:
+                get_dagster_logger().info(f"one ig result {ig_result}")
+                results.append(ig_result['image_group'])
+            # for r in ig_result:
+            #     get_dagster_logger().info( f"One result{r}")
+
+                # if  not r['valid']:
+                #     results.append(r['image_group'])
+
+            #        [results.append(i) for i in [ g['igresults'] for g in f  ]
+    get_dagster_logger().info(f"Number of failed image groups {len(results)}")
+
+    return results
+
+@asset
+def failed_work_ids(failed_works):
+    """
+    Extract work RIDs from failed_work data
+    :param failed_works:
+    :return:
+    """
+    results:[] = []
+    for f in failed_works:
+        get_dagster_logger().info(f)
+        results.append(f['work'])
+
+    return
+
+
+@asset
+def fixed_image_groups(failed_image_groups):
+    """
+    Fixes the failed image groups
+    :param failed_image_groups:
+    :return:
+    """
 @job
 def iiifpres_crawl():
-    scan_works(works())
+    """
+    Materialize scan works. Not used directly. Run scan_works_job from UI instead
+    :return:
+    """
+    fixed_image_groups(failed_image_groups(failed_works(scan_works(works()))))
 
 
 scan_works_job = define_asset_job(name="scan_works_job", selection="scan_works")
+fixed_works_job = define_asset_job(name="fixed_works_job", selection="fixed_works")
+fixed_igs_job = define_asset_job(name="fixed_igs_job", selection="fixed_igs")
 
 
 @repository
 def iiif_crawl_repo():
-    return [works, scan_works, scan_works_job, iiifpres_crawl]
+    return [works, scan_works, scan_works_job, iiifpres_crawl, failed_works, failed_image_groups]
 
+#
+# TODO:
+# How to materialize works in the API
