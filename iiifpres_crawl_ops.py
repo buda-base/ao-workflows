@@ -155,7 +155,7 @@ def failed_image_groups(failed_works):
     # results = [i for i in [x['ig_results'] for x in failed_works ] if not i['valid']]
     # for x in bb:
     #     [cc.append(i) for i in x]
-    results:[] = []
+    results: [] = []
     for f in failed_works:
         get_dagster_logger().info(f"One works worth of ig results {f['ig_results']}")
         for ig_result in f['ig_results']:
@@ -165,43 +165,67 @@ def failed_image_groups(failed_works):
             # for r in ig_result:
             #     get_dagster_logger().info( f"One result{r}")
 
-                # if  not r['valid']:
-                #     results.append(r['image_group'])
+            # if  not r['valid']:
+            #     results.append(r['image_group'])
 
             #        [results.append(i) for i in [ g['igresults'] for g in f  ]
     get_dagster_logger().info(f"Number of failed image groups {len(results)}")
 
     return results
 
-@asset
+
+def parse_ig(ig_path:str) -> str:
+    """
+    Parse an image group path to get its image group. The image group is the parent of the dimensions.json
+    :param ig_path:
+    :return:
+    """
+    from pathlib import Path
+
+    return Path(ig_path).parent.name
+
+
+@asset(ins={"failed_works": AssetIn(key="failed_works")})
 def failed_work_ids(failed_works):
     """
-    Extract work RIDs from failed_work data
+    Extract [ { 'work': work , 'image_groups' :[ ig1 } ...] from failed_work data
     :param failed_works:
     :return:
     """
-    results:[] = []
+    results: [] = []
     for f in failed_works:
-        get_dagster_logger().info(f)
-        results.append(f['work'])
-
-    return
+        # get_dagster_logger().info(f)
+        results.append({'work': f['work'], 'igs': [parse_ig(x['image_group']) for x in f['ig_results'] if not x['valid']]})
+        # for ig_result in f['ig_results']:
+        #     if not ig_result['valid']:
+        #         igs:[] = map(parse_ig,ig_result['image_group'])
+        #
+        #         get_dagster_logger().info(f"one ig result {ig_result}")
+        #         igs.append(ig_result['image_group'])
+    [get_dagster_logger().info(x) for x in results]
+    return results
 
 
 @asset
 def fixed_image_groups(failed_image_groups):
     """
     Fixes the failed image groups
-    :param failed_image_groups:
+    :param failed_image_groups: [ { 'ig_name': 'path' : s3_path } ]
     :return:
     """
+    for fig in failed_image_groups:
+        get_dagster_logger().info(fig)
+
+
+
 @job
 def iiifpres_crawl():
     """
     Materialize scan works. Not used directly. Run scan_works_job from UI instead
     :return:
     """
-    fixed_image_groups(failed_image_groups(failed_works(scan_works(works()))))
+    # fixed_image_groups(failed_image_groups(failed_works(scan_works(works()))))
+    failed_work_ids(failed_works(scan_works(works())))
 
 
 scan_works_job = define_asset_job(name="scan_works_job", selection="scan_works")
@@ -211,8 +235,12 @@ fixed_igs_job = define_asset_job(name="fixed_igs_job", selection="fixed_igs")
 
 @repository
 def iiif_crawl_repo():
-    return [works, scan_works, scan_works_job, iiifpres_crawl, failed_works, failed_image_groups]
+    return [works, scan_works, scan_works_job, iiifpres_crawl, failed_works, failed_image_groups, failed_work_ids]
+
 
 #
 # TODO:
 # How to materialize works in the API
+
+if __name__ == '__main__':
+    iiifpres_crawl.execute_in_process()
