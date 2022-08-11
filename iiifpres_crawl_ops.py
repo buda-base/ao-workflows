@@ -2,7 +2,7 @@
 import sys
 from datetime import *
 
-from dagster import op, job, get_dagster_logger, List, Dict, String, repository, define_asset_job, AssetIn
+from dagster import job, get_dagster_logger, List, Dict, repository, define_asset_job, AssetIn
 
 from crawl_utils import crawl_utils
 
@@ -16,7 +16,7 @@ from dagster import asset
 )
 def works():
     work_list: [] = []
-    with open('data/scans.lst', 'r') as df:
+    with open('data/scans.lst.full', 'r') as df:
         work_list = [x.strip() for x in df.readlines()]
     get_dagster_logger().info(f"retrieved {len(work_list)} works")
     return work_list
@@ -174,7 +174,7 @@ def failed_image_groups(failed_works):
     return results
 
 
-def parse_ig(ig_path:str) -> str:
+def parse_ig(ig_path: str) -> str:
     """
     Parse an image group path to get its image group. The image group is the parent of the dimensions.json
     :param ig_path:
@@ -195,7 +195,8 @@ def failed_work_ids(failed_works):
     results: [] = []
     for f in failed_works:
         # get_dagster_logger().info(f)
-        results.append({'work': f['work'], 'igs': [parse_ig(x['image_group']) for x in f['ig_results'] if not x['valid']]})
+        results.append(
+            {'work': f['work'], 'igs': [parse_ig(x['image_group']) for x in f['ig_results'] if not x['valid']]})
         # for ig_result in f['ig_results']:
         #     if not ig_result['valid']:
         #         igs:[] = map(parse_ig,ig_result['image_group'])
@@ -217,6 +218,23 @@ def fixed_image_groups(failed_image_groups):
         get_dagster_logger().info(fig)
 
 
+# ({"work_igs": AssetIn(key="failed_work_ids")}))
+# What do I get if I just pass the materialized asset as an unnamed parm?
+# (ins={'work_igs': In(asset_key=AssetKey(['failed_work_ids']))})
+
+@asset
+def fix_igs(failed_work_ids):
+    """
+    Actually fix the bad image groups
+    :param failed_work_ids [ { 'work' : work , 'igs' : [ image_group..]} ]
+    :return:
+    """
+    for work_ig in failed_work_ids:
+        for ig in work_ig['igs']:
+            get_dagster_logger().info(f"Fixing {ig}")
+            s3_session.fix_one(work_ig['work'], ig)
+
+
 
 @job
 def iiifpres_crawl():
@@ -225,7 +243,7 @@ def iiifpres_crawl():
     :return:
     """
     # fixed_image_groups(failed_image_groups(failed_works(scan_works(works()))))
-    failed_work_ids(failed_works(scan_works(works())))
+    fix_igs(failed_work_ids(failed_works(scan_works(works()))))
 
 
 scan_works_job = define_asset_job(name="scan_works_job", selection="scan_works")
@@ -235,7 +253,8 @@ fixed_igs_job = define_asset_job(name="fixed_igs_job", selection="fixed_igs")
 
 @repository
 def iiif_crawl_repo():
-    return [works, scan_works, scan_works_job, iiifpres_crawl, failed_works, failed_image_groups, failed_work_ids]
+    return [works, scan_works, scan_works_job, iiifpres_crawl, failed_works, failed_image_groups, failed_work_ids,
+            fix_igs]
 
 
 #
