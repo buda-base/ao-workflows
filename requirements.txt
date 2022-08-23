@@ -1,3 +1,4 @@
 dagster
 boto3
 bdrc-volume-manifest-builder>=1.2.6
+internetarchive
