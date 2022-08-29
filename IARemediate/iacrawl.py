@@ -103,23 +103,30 @@ def mismatched_items_that_derived(item_mismatches, items_with_failed_derive):
     get_dagster_logger().info(f"found {len(results)} mismatches where derive was successful.")
     return results
 
+@job
+def init_rederives():
+    """
+    Move the next set of rederives from the asset into the ia tracker
+    :return:
+    """
+@job
+def fix_segment():
+    do_fix_segment(get_next_segment())
 
-#
-# mismatch_job = define_asset_job(name="get_raw_mismatches_job", selection="mismatch_data")
-# items_for_mismatch = define_asset_job(name="mismatched_items", selection="mismatches")
-# mismatch_for_items = define_asset_job(name="mismatches_for_items", selection="item_mismatches")
+@op
+def get_next_segment():
+    """
+    Returns the next config chunk
+    :return:
+    """
 
-#
-# @job
-# def some_ia_action():
-#     """
-#     Stub - not called directly
-#     :return:
-#     """
-#     x = items_with_failed_derive(item_mismatches(mismatches(mismatch_data())))
-#
-
-
+@op
+def do_fix_segment(next_segment):
+    """
+    Calls IA rederive on a segment of works, and logs the result
+    :param next_segment:
+    :return:
+    """
 @repository
 def ia_fix_repo():
     # return [some_ia_action, mismatch_job, items_for_mismatch, mismatch_for_items,
