@@ -18,8 +18,8 @@ from iaCrawlUtils import ia_report_log, ia_lib
 
 @asset(group_name='ia_crawl')
 def mismatch_data():
-    log = ia_report_log(Path(Path.home() / "dev" / "ao-workflows" / "data" / "ia-mismatch.report.log"))
-    # log = ia_report_log(Path(Path.home() / "dev-from-deploy" / "ao-workflows" / "data" / "ia-mismatch.report.log"))
+    log = ia_report_log(Path(Path.home() / "dev" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))
+    # log = ia_report_log(Path(Path.home() / "dev-from-deploy" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))
     results = log.raw_lines
     get_dagster_logger().info(f"loaded {len(results)} lines from log")
     return results
