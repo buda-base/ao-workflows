@@ -101,6 +101,7 @@ def mismatched_items_that_derived(item_mismatches, items_with_failed_derive):
     failed_derive_set = set(items_with_failed_derive)
     results  = list (mismatched_as_set - failed_derive_set)
     get_dagster_logger().info(f"found {len(results)} mismatches where derive was successful.")
+    return results
 
 
 #

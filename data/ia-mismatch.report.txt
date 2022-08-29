@@ -1,7 +1,6 @@
 listed items that should be unlisted:
 
 
-bdrc-W8LS76250
 
 
 
@@ -9,7 +8,6 @@ bdrc-W8LS76250
 unlisted items that should be listed:
 
 
-bdrc-W3CN3207
 bdrc-W3CN7776
 
 
@@ -18,8 +16,8 @@ bdrc-W3CN7776
 items in buddhist-digital-resource-center-restricted that should not be:
 
 
+bdrc-W1KG17438
 bdrc-W22393
-bdrc-W4CZ354413
 
 
 
@@ -48,7 +46,6 @@ bdrc-W1AC413
 bdrc-W1KG10687
 bdrc-W1KG13617
 bdrc-W1KG13802
-bdrc-W1KG14
 bdrc-W1KG14303
 bdrc-W1KG14667
 bdrc-W1KG14743
@@ -68,7 +65,6 @@ bdrc-W1KG23086
 bdrc-W1KG23520
 bdrc-W1KG23538
 bdrc-W1KG23764
-bdrc-W1KG24215
 bdrc-W1KG24995
 bdrc-W1KG25488
 bdrc-W1KG25527
@@ -356,8 +352,8 @@ bdrc-W741
 bdrc-W7499
 bdrc-W8LS18002
 bdrc-W8LS20371
+bdrc-W8LS30929
 bdrc-W8LS41972
-bdrc-W8LS76250
 
 
 
@@ -365,85 +361,14 @@ bdrc-W8LS76250
 items in inlibrary that should not be:
 
 
-bdrc-W00KG0619
 bdrc-W1AB6
-bdrc-W1AB7
-bdrc-W1KG109088
-bdrc-W1KG109094
-bdrc-W1KG109095
-bdrc-W1KG109096
-bdrc-W1KG109097
-bdrc-W1KG109098
-bdrc-W1KG109099
-bdrc-W1KG109100
-bdrc-W1KG116063
 bdrc-W1KG14350
 bdrc-W1KG14534
 bdrc-W1KG14589
 bdrc-W1KG14607
-bdrc-W1KG15416
-bdrc-W1KG15580
-bdrc-W1KG15896
-bdrc-W1KG20787
+bdrc-W1KG17438
 bdrc-W1KG21296
-bdrc-W1KG21998
-bdrc-W1KG22420
-bdrc-W1KG23742
-bdrc-W1KG23749
-bdrc-W1KG23754
-bdrc-W1KG23757
-bdrc-W1KG24217
-bdrc-W1KG24524
-bdrc-W1KG25909
-bdrc-W1KG25915
-bdrc-W1KG6202
 bdrc-W1KG91163
-bdrc-W1KG91164
-bdrc-W1KG91165
-bdrc-W1KG91166
-bdrc-W1KG91171
-bdrc-W2CZ7990
-bdrc-W2KG207346
-bdrc-W2KG207347
-bdrc-W2KG207551
-bdrc-W2KG207552
-bdrc-W2KG207553
-bdrc-W2KG207554
-bdrc-W3CN17676
-bdrc-W3CN17679
-bdrc-W3CN17685
-bdrc-W3CN9674
-bdrc-W4CZ294740
-bdrc-W4CZ294911
-bdrc-W4CZ294913
-bdrc-W4CZ294914
-bdrc-W4CZ294915
-bdrc-W4CZ294916
-bdrc-W4CZ294917
-bdrc-W4CZ294918
-bdrc-W4CZ294919
-bdrc-W4CZ294922
-bdrc-W4CZ294923
-bdrc-W4CZ294924
-bdrc-W4CZ295065
-bdrc-W4CZ295070
-bdrc-W4CZ295071
-bdrc-W4CZ295072
-bdrc-W4CZ295074
-bdrc-W4CZ295075
-bdrc-W4CZ295076
-bdrc-W4CZ295077
-bdrc-W4CZ295078
-bdrc-W4CZ295080
-bdrc-W4CZ295081
-bdrc-W4CZ295084
-bdrc-W4CZ295937
-bdrc-W8LS16366
-bdrc-W8LS23999
-bdrc-W8LS26176
-bdrc-W8LS32706
-bdrc-W8LS42293
-bdrc-W8LS76094
 
 
 
@@ -472,7 +397,6 @@ bdrc-W1AC413
 bdrc-W1KG10687
 bdrc-W1KG13617
 bdrc-W1KG13802
-bdrc-W1KG14
 bdrc-W1KG14303
 bdrc-W1KG14667
 bdrc-W1KG14743
@@ -774,6 +698,7 @@ bdrc-W669
 bdrc-W741
 bdrc-W7499
 bdrc-W8LS20371
+bdrc-W8LS30929
 bdrc-W8LS41972
 
 
@@ -805,6 +730,27 @@ items not in bdrc-khmermanuscripts that should be:
 
 
 bdrc-W1FEMC030236
+bdrc-W1FEMC031428
+bdrc-W1FEMC031800
+bdrc-W1FEMC031830
+bdrc-W1FEMC032029
+bdrc-W1FEMC032383
+bdrc-W1FEMC032384
+bdrc-W1FEMC032385
+bdrc-W1FEMC032584
+bdrc-W1FEMC032586
+bdrc-W1FEMC032625
+bdrc-W1FEMC032646
+bdrc-W1FEMC032647
+bdrc-W1FEMC032731
+bdrc-W1FEMC032732
+bdrc-W1FEMC032734
+bdrc-W1FEMC033311
+bdrc-W1FEMC035534
+bdrc-W1FEMC044732
+bdrc-W1FEMC046667
+bdrc-W1FEMC046676
+bdrc-W1FEMC046692
 
 
 
@@ -813,7 +759,6 @@ items in geo_restricted that should not be:
 
 
 bdrc-W1PD105846
-bdrc-W8LS76250
 
 
 
@@ -840,7 +785,6 @@ bdrc-W1KG12986
 bdrc-W1KG13617
 bdrc-W1KG13759
 bdrc-W1KG13802
-bdrc-W1KG14
 bdrc-W1KG14667
 bdrc-W1KG14743
 bdrc-W1KG16154
@@ -853,9 +797,7 @@ bdrc-W1KG17448
 bdrc-W1KG17609
 bdrc-W1KG23538
 bdrc-W1KG23717
-bdrc-W1KG24215
 bdrc-W1KG24470
-bdrc-W1KG2733
 bdrc-W1KG4218
 bdrc-W1KG4852
 bdrc-W1KG5194
