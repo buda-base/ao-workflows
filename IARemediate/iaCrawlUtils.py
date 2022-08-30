@@ -13,7 +13,6 @@ from pathlib import Path
 
 from internetarchive.catalog import CatalogTask
 
-
 class ia_lib():
     ia_session: ArchiveSession
     config: {} = {'logging': {'level': 'INFO', 'file': f'{str(Path(Path.home() / "tmp" / "ia.log"))}'}}
@@ -36,6 +35,13 @@ class ia_lib():
         tasks = self.ia_session.get_tasks(id, params={'cmd': 'derive.php'})
         last_derive_task_time = max([x.submittime for x in tasks])
         return [x for x in tasks if x.submittime == last_derive_task_time][0]
+
+    def submit_rederive_task(self, ia_id: str):
+        """
+        Submit a rederive task
+        :param ia_id:
+        :return:
+        """
 
 
 class ia_report_log():

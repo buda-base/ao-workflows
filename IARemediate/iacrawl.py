@@ -9,9 +9,11 @@ Workflow for https://github.com/buda-base/ao-workflows/issues/2
 
 
 """
+import os
 from pathlib import Path
 
-from dagster import define_asset_job, job, asset, repository, materialize, get_dagster_logger
+import dagster
+from dagster import job, asset, repository, materialize, get_dagster_logger, In, AssetKey, op, define_asset_job
 
 from iaCrawlUtils import ia_report_log, ia_lib
 
@@ -90,6 +92,7 @@ def items_with_failed_derive(item_mismatches):
     get_dagster_logger().info(f"found {len(y)} items that failed derive.")
     return y
 
+
 @asset(group_name='ia_crawl')
 def mismatched_items_that_derived(item_mismatches, items_with_failed_derive):
     """
@@ -99,56 +102,77 @@ def mismatched_items_that_derived(item_mismatches, items_with_failed_derive):
     """
     mismatched_as_set = set(item_mismatches.keys())
     failed_derive_set = set(items_with_failed_derive)
-    results  = list (mismatched_as_set - failed_derive_set)
+    results = list(mismatched_as_set - failed_derive_set)
     get_dagster_logger().info(f"found {len(results)} mismatches where derive was successful.")
     return results
 
-@job
-def init_rederives():
-    """
-    Move the next set of rederives from the asset into the ia tracker
-    :return:
-    """
-@job
-def fix_segment():
-    do_fix_segment(get_next_segment())
+    # , input_manager_key="io_manager")},
+    # required_resource_keys={"io_manager"}
 
+
+# (ins={"mismatch_needs_rederive": In(asset_key=AssetKey(["mismatched_items_that_derived"]))})
 @op
-def get_next_segment():
+def do_launch(mismatch_needs_rederive):
     """
-    Returns the next config chunk
+    Launch rederive for mismatches. Hank advises 200 rederives ok.
     :return:
     """
 
-@op
-def do_fix_segment(next_segment):
-    """
-    Calls IA rederive on a segment of works, and logs the result
-    :param next_segment:
-    :return:
-    """
+    # Look at the asset class - nothing there
+    # mmnd_asset = mismatched_items_that_derived
+
+    for mmnd in mismatch_needs_rederive[:200]:
+        print(mmnd)
+
+
+@job
+def launch_rederives():
+    do_launch()
+
+
 @repository
 def ia_fix_repo():
     # return [some_ia_action, mismatch_job, items_for_mismatch, mismatch_for_items,
     #         mismatch_data, mismatches, item_mismatches]
     #
     # defining one job for all assets
-    return [mismatch_data, mismatches, item_mismatches, items_with_failed_derive, mismatched_items_that_derived]
-
-
-if __name__ == '__main__':
-    # mismatch_for_items.ex
-    assets = [
+    return [
         mismatch_data,
         mismatches,
         item_mismatches,
         items_with_failed_derive,
         mismatched_items_that_derived,
+        launch_rederives
+
     ]
 
-    get_dagster_logger().info(f"materializing")
+
+if __name__ == '__main__':
+    # ------------------ Run job on materialized assets
+
+    get_dagster_logger().info(f"Here comes the job")
+    launch_rederives.execute_in_process(run_config=
+                                        {'ops':
+                                             {'do_launch':
+                                                  {'inputs': {'mismatch_needs_rederive': {'pickle': {
+                                                      'path': str(Path(os.getenv('DAGSTER_HOME')) / 'storage' / 'mismatched_items_that_derived')}}
+                                                              }
+                                                   }
+                                              }
+                                         }
+                                        )
+    # -------------------- Asset materialization for debug session
+    # get_dagster_logger().info(f"materializing")
+    # mismatch_for_items.ex
+    # assets = [
+    #     mismatch_data,
+    #     mismatches,
+    #     item_mismatches,
+    #     items_with_failed_derive,
+    #     mismatched_items_that_derived,
+    # ]
 
     # Rebuild from scratch
-    result = materialize(assets)
+    # result = materialize(assets)
     # Try - nope: says upstream not materialized
     # results = materialize([mismatched_items_that_derived])

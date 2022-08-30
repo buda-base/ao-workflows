@@ -1,4 +1,5 @@
 dagster==1.0.4
 boto3
 bdrc-volume-manifest-builder>=1.2.6
+bdrc-DBApps
 internetarchive
