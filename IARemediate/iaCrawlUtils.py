@@ -7,11 +7,21 @@ task succeeded.
 
 We need the IA identifiers for the succeeded derive tasks to check their collections.
 """
+import json
+import os.path
 
 from internetarchive import get_session, ArchiveSession
 from pathlib import Path
 
 from internetarchive.catalog import CatalogTask
+
+_s3: str = 's3'
+platform_ia_config_map: {} = {
+    'Darwin': os.path.expanduser('~/.config/ia.ini'),
+    'Linux': os.path.expanduser('~/.ia'),
+    'Windows': os.path.expanduser('~\.config\internetarchive\ia.ini')
+}
+
 
 class ia_lib():
     ia_session: ArchiveSession
@@ -36,27 +46,74 @@ class ia_lib():
         last_derive_task_time = max([x.submittime for x in tasks])
         return [x for x in tasks if x.submittime == last_derive_task_time][0]
 
-    def submit_rederive_task(self, ia_id: str):
+    def submit_rederive_task(self, ia_id: str) -> str:
         """
         Submit a rederive task
-        :param ia_id:
-        :return:
+        :type ia_id: str
+        :param ia_id: Internet Archive Item id
+        :return: task id if successful
         """
 
+        # https://archive.org/services/docs/api/tasks.html
+        # Requests doc https://requests.readthedocs.io/en/latest/
 
-class ia_report_log():
+        task_url = "https://archive.org/services/tasks.php"
+
+        req_data_dict: {} = {'identifier': ia_id,
+                             'cmd': 'derive.php',
+                             'args': ['remove_derived=*']
+                             }
+
+        req_json: str = json.dumps(req_data_dict)
+        import requests
+
+        auth = self.ia_auth()
+        headers: {} = {
+            'Authorization': f"LOW {auth[0]}:{auth[1]}"
+        }
+
+        r: requests.Response = requests.post(url=task_url, data=req_json, headers=headers)
+        if not r.ok:
+            raise ValueError(f"Rederive request for {ia_id} failed  ")
+        resp_dict = json.load(r.json())
+        print(resp_dict)
+        print(r.json)
+
+    # try:
+    #     with request.urlopen(req) as response:
+    def ia_auth(self) -> (str, str):
+        """
+        Returns the S3 link access and security keys from the user's auth file
+        :return:
+        """
+        import platform
+        from configparser import ConfigParser
+
+        ps: str = platform.system()
+        try:
+            cnf: ConfigParser = ConfigParser()
+            cnf.read(platform_ia_config_map[ps])
+
+            if _s3 not in cnf:
+                raise NotImplementedError("Config requires an s3 section")
+            return cnf[_s3]['access'], cnf[_s3]['secret']
+
+        except KeyError:
+            raise ValueError(f"{ps} is not a supported platform for BDRC Internet Archive operations")
+
+
+class IaReportLog():
     """
     Transforms the report log into a data structure"
     [ {'mismatch_type': str , 'works_mismatched' : [ str,....] }
     """
 
     _log_source: Path
-    _log_lines:[str] = []
+    _log_lines: [str] = []
 
     @property
     def raw_lines(self):
         return self._raw_lines
-
 
     @raw_lines.setter
     def raw_lines(self, value):
@@ -82,6 +139,7 @@ class ia_report_log():
         1..* ['reason:'  1..n [ blank line | IA item id ] ]
         where 'reason is an arbitrary string
         """
+        self._raw_lines = None
         self.log_source = log_source
         self.load()
 
@@ -89,12 +147,12 @@ class ia_report_log():
         """
         Rebuilds structure from the file
         """
-        log_buf:[str] = []
-        with open (self.log_source, 'r') as ibuf:
+        log_buf: [str] = []
+        with open(self.log_source, 'r') as ibuf:
             log_buf = ibuf.readlines()
         self.raw_lines = [x.strip() for x in log_buf if x.strip()]
 
 
 if __name__ == '__main__':
     # xx = ia_lib().get_last_work_derive_task("")
-    yy = ia_report_log(Path(Path.home() / "dev" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))
+    yy = IaReportLog(Path(Path.home() / "dev" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))

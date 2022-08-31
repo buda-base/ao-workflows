@@ -6,17 +6,16 @@ import logging
 import os.path
 import sys
 
-from sqlalchemy import Column, Integer, String, ForeignKey, create_engine, text, select, insert, Table
-from sqlalchemy.orm import declarative_base, relationship, Session
-
 from config.config import DBConfig
+from sqlalchemy import create_engine, select, Table
+from sqlalchemy.orm import declarative_base, Session
 
 Base = declarative_base()
 
 # engine = create_engine("sqlite+pysqlite:///:memory:", echo=True, future=True)
 # Use the qa section, which is an authorized user - only if you want to create things
 # for reading, use 'prod'
-cnf: DBConfig = DBConfig('prod', '~/.config/bdrc/db_apps.config')
+cnf: DBConfig = DBConfig('prodcli', '~/.config/bdrc/db_apps.config')
 
 # We need to reach through the DBApps config into the underlying [mysql] config
 # parser
@@ -97,7 +96,6 @@ class IATracker():
             cursor.close()
             conn.commit()
             conn.close()
-        work_id = 0
 
         with Session(engine) as session:
             get_work_id = select(Works.workId).where(Works.WorkName == work_name)
@@ -108,19 +106,13 @@ class IATracker():
                 raise ValueError(f"Could not locate work with name {work_name}")
             work_id = one[0]
 
-            # It would be nice if reflected ORMS could use __init__ **kwargs
-            # work_id=work_id, ia_id=ia_item_id, task_id=task_id
             new_ia = IATrack( workId=work_id, ia_id=ia_item_id, task_id=task_id)
-#             new_ia = IATrack()
-#             new_ia.workId = work_id
-#             new_ia.ia_id = ia_item_id
-#             new_ia.task_id = task_id
 
             session.add(new_ia)
-            session.flush()
+#             session.flush()
             session.commit()
 
 
 if __name__ == '__main__':
     iat: IATracker = IATracker()
-    iat.add_track("bdrc-Blarg", "HoopstyFreen", 42)
+    iat.add_track("bdrc-W29035", "W29035", 3390336999)
