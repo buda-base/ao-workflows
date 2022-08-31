@@ -1,6 +1,5 @@
-"""
-Replicate in python the command:
-cat $UPLOAD_WORK_LIST| parallel --group 'ia tasks {} -p "cmd=derive.php" -p "submittime>=2022-04-01" | jq . '  > work-tasks
+"""Replicate in python the command: cat $UPLOAD_WORK_LIST| parallel --group 'ia tasks {} -p "cmd=derive.php" -p
+"submittime>=2022-04-01" | jq . '  > work-tasks
 
 Only tasks which have failed have a status. so one cannot discriminate based on status alone whether work's last derive
 task succeeded.
@@ -9,6 +8,7 @@ We need the IA identifiers for the succeeded derive tasks to check their collect
 """
 import json
 import os.path
+from typing import Tuple, Any
 
 from internetarchive import get_session, ArchiveSession
 from pathlib import Path
@@ -23,7 +23,7 @@ platform_ia_config_map: {} = {
 }
 
 
-class ia_lib():
+class ia_lib:
     ia_session: ArchiveSession
     config: {} = {'logging': {'level': 'INFO', 'file': f'{str(Path(Path.home() / "tmp" / "ia.log"))}'}}
 
@@ -33,20 +33,20 @@ class ia_lib():
         """
         self.ia_session = get_session(config=self.config)
 
-    def get_last_work_derive_task(self, id: str) -> CatalogTask:
+    def get_last_work_derive_task(self, ia_id: str) -> CatalogTask:
         """
         Get the most recent derive task for the id
         This is a little subtle because you can't count on an error state always. The if a task
         fails, it has a color red, but if a subsequent try succeeds, the color comes back none.
-        :param id: work to search
+        :param ia_id: work to search
         :return:
         """
 
-        tasks = self.ia_session.get_tasks(id, params={'cmd': 'derive.php'})
+        tasks = self.ia_session.get_tasks(ia_id, params={'cmd': 'derive.php'})
         last_derive_task_time = max([x.submittime for x in tasks])
         return [x for x in tasks if x.submittime == last_derive_task_time][0]
 
-    def submit_rederive_task(self, ia_id: str) -> str:
+    def submit_rederive_task(self, ia_id: str) -> Tuple[Any, Any]:
         """
         Submit a rederive task
         :type ia_id: str
@@ -75,9 +75,12 @@ class ia_lib():
         r: requests.Response = requests.post(url=task_url, data=req_json, headers=headers)
         if not r.ok:
             raise ValueError(f"Rederive request for {ia_id} failed  ")
-        resp_dict = json.load(r.json())
+        resp_dict = r.json()
         print(resp_dict)
-        print(r.json)
+        if resp_dict['success']:
+            return resp_dict['value']['task_id'], resp_dict['value']['log']
+        else:
+            raise ValueError(f"item {ia_id} request failed {resp_dict['error']} ")
 
     # try:
     #     with request.urlopen(req) as response:
@@ -102,7 +105,7 @@ class ia_lib():
             raise ValueError(f"{ps} is not a supported platform for BDRC Internet Archive operations")
 
 
-class IaReportLog():
+class IaReportLog:
     """
     Transforms the report log into a data structure"
     [ {'mismatch_type': str , 'works_mismatched' : [ str,....] }
@@ -147,9 +150,10 @@ class IaReportLog():
         """
         Rebuilds structure from the file
         """
-        log_buf: [str] = []
+
         with open(self.log_source, 'r') as ibuf:
             log_buf = ibuf.readlines()
+        # Believe it or not, this actually works, if the file was read
         self.raw_lines = [x.strip() for x in log_buf if x.strip()]
 
 

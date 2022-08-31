@@ -29,7 +29,7 @@ conn_str = "mysql+pymysql://%s:%s@%s:%d/%s" % (
     engine_cnf.getint(cnf.db_host, "port", fallback=3306),
     engine_cnf.get(cnf.db_host, "database"))
 
-engine = create_engine(conn_str, echo=True, future=True)
+engine = create_engine(conn_str, echo=False, future=True)
 
 
 class IATrack(Base):
@@ -75,7 +75,7 @@ class IATracker():
             ee = sys.exc_info()
             logging.info(ee)
 
-    def add_track(self, ia_item_id: str, work_name: str, task_id: int):
+    def add_track(self, ia_item_id: str, work_name: str, task_id: int, task_log: str = None):
         """
         Adds a record to tracking
         :param ia_item_id: the IA identifier
@@ -105,14 +105,12 @@ class IATracker():
             if one is None:
                 raise ValueError(f"Could not locate work with name {work_name}")
             work_id = one[0]
-
-            new_ia = IATrack( workId=work_id, ia_id=ia_item_id, task_id=task_id)
-
+            new_ia = IATrack( workId=work_id, ia_id=ia_item_id, task_id=task_id, log=task_log)
             session.add(new_ia)
-#             session.flush()
             session.commit()
 
 
 if __name__ == '__main__':
     iat: IATracker = IATracker()
-    iat.add_track("bdrc-W29035", "W29035", 3390336999)
+    # For testing - do not add again
+    # iat.add_track("bdrc-W1FEMC046676", "W1FEMC046676", 339055646)

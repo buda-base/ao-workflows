@@ -12,16 +12,16 @@ Workflow for https://github.com/buda-base/ao-workflows/issues/2
 import os
 from pathlib import Path
 
-import dagster
-from dagster import job, asset, repository, materialize, get_dagster_logger, In, AssetKey, op, define_asset_job
+from dagster import job, asset, repository, get_dagster_logger, op
 
-from iaCrawlUtils import ia_report_log, ia_lib
+from IARemediate.IaTrack import IATracker
+from iaCrawlUtils import IaReportLog, ia_lib
 
 
 @asset(group_name='ia_crawl')
 def mismatch_data():
-    log = ia_report_log(Path(Path.home() / "dev" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))
-    # log = ia_report_log(Path(Path.home() / "dev-from-deploy" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))
+    log = IaReportLog(Path(Path.home() / "dev" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))
+    # log = IaReportLog(Path(Path.home() / "dev-from-deploy" / "ao-workflows" / "data" / "ia-mismatch.report.txt"))
     results = log.raw_lines
     get_dagster_logger().info(f"loaded {len(results)} lines from log")
     return results
@@ -31,6 +31,7 @@ def mismatch_data():
 def mismatches(mismatch_data):
     """
     Turns raw mismatch data into data structure
+    :type mismatch_data: [str]
     :param mismatch_data: [textline, ..... ]
     :return: { reason: [item_id, ....] }
     """
@@ -118,11 +119,19 @@ def do_launch(mismatch_needs_rederive):
     :return:
     """
 
-    # Look at the asset class - nothing there
-    # mmnd_asset = mismatched_items_that_derived
+    ia_ctx = ia_lib()
+    ia_db: IATracker = IATracker()
 
-    for mmnd in mismatch_needs_rederive[:200]:
-        print(mmnd)
+    successes: int = 0
+    for mmnd in mismatch_needs_rederive:
+        try:
+            task_id, task_log = ia_ctx.submit_rederive_task(mmnd)
+            ia_db.add_track(mmnd, mmnd.strip("bdrc-"), int(task_id), task_log)
+            successes += 1
+        except Exception as eek:
+            get_dagster_logger().error(f"Rederive request for {mmnd} error:{eek} ")
+
+    get_dagster_logger().info(f"rederive requests:  succeeded:{successes}  failed:{len(mmnd) - successes}")
 
 
 @job
@@ -151,16 +160,17 @@ if __name__ == '__main__':
     # ------------------ Run job on materialized assets
 
     get_dagster_logger().info(f"Here comes the job")
-    launch_rederives.execute_in_process(run_config=
-                                        {'ops':
-                                             {'do_launch':
-                                                  {'inputs': {'mismatch_needs_rederive': {'pickle': {
-                                                      'path': str(Path(os.getenv('DAGSTER_HOME')) / 'storage' / 'mismatched_items_that_derived')}}
-                                                              }
-                                                   }
-                                              }
-                                         }
-                                        )
+    launch_rederives.execute_in_process(run_config={
+        'ops': {
+            'do_launch':
+                {
+                    'inputs': {'mismatch_needs_rederive': {'pickle': {
+                        'path': str(Path(os.getenv('DAGSTER_HOME')) / 'storage' / 'mismatched_items_that_derived')}}
+                    }
+                }
+        }
+    }
+    )
     # -------------------- Asset materialization for debug session
     # get_dagster_logger().info(f"materializing")
     # mismatch_for_items.ex
