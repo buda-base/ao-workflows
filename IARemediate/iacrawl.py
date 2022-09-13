@@ -12,10 +12,10 @@ Workflow for https://github.com/buda-base/ao-workflows/issues/2
 import os
 from pathlib import Path
 
-from dagster import job, asset, repository, get_dagster_logger, op
+from dagster import job, asset, repository, get_dagster_logger, op, materialize
 
-from IARemediate.IaTrack import IATracker
-from iaCrawlUtils import IaReportLog, ia_lib
+from IaTrack import IATracker
+from iaCrawlUtils  import IaReportLog, ia_lib
 
 
 @asset(group_name='ia_crawl')
@@ -159,30 +159,30 @@ def ia_fix_repo():
 if __name__ == '__main__':
     # ------------------ Run job on materialized assets
 
-    get_dagster_logger().info(f"Here comes the job")
-    launch_rederives.execute_in_process(run_config={
-        'ops': {
-            'do_launch':
-                {
-                    'inputs': {'mismatch_needs_rederive': {'pickle': {
-                        'path': str(Path(os.getenv('DAGSTER_HOME')) / 'storage' / 'mismatched_items_that_derived')}}
-                    }
-                }
-        }
-    }
-    )
+    # get_dagster_logger().info(f"Here comes the job")
+    # launch_rederives.execute_in_process(run_config={
+    #     'ops': {
+    #         'do_launch':
+    #             {
+    #                 'inputs': {'mismatch_needs_rederive': {'pickle': {
+    #                     'path': str(Path(os.getenv('DAGSTER_HOME')) / 'storage' / 'mismatched_items_that_derived')}}
+    #                 }
+    #             }
+    #     }
+    # }
+    # )
     # -------------------- Asset materialization for debug session
-    # get_dagster_logger().info(f"materializing")
+    get_dagster_logger().info(f"materializing")
     # mismatch_for_items.ex
-    # assets = [
-    #     mismatch_data,
-    #     mismatches,
-    #     item_mismatches,
-    #     items_with_failed_derive,
-    #     mismatched_items_that_derived,
-    # ]
+    assets = [
+        mismatch_data,
+        mismatches,
+        item_mismatches,
+        items_with_failed_derive,
+        mismatched_items_that_derived,
+    ]
 
     # Rebuild from scratch
-    # result = materialize(assets)
+    result = materialize(assets)
     # Try - nope: says upstream not materialized
     # results = materialize([mismatched_items_that_derived])

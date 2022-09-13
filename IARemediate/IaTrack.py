@@ -35,6 +35,8 @@ engine = create_engine(conn_str, echo=False, future=True)
 class IATrack(Base):
     __table__ = Table('IATrack', Base.metadata, autoload_with=engine)
     # workId: int, ia_id : str , task_id:str
+    # We only need this init when we want to update or add to the db
+    # Thats' why this isn't here in the Works class below
     def __init__(self, *args, **kwargs ):
         """
         reflect constructor orgs attempt
