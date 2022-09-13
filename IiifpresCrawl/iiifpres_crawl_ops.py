@@ -12,7 +12,8 @@ from dagster import asset
 
 
 @asset(
-    metadata={"owner": "jimk@tbrc.org", "domain": "ao"}
+    metadata={"owner": "jimk@tbrc.org", "domain": "ao"},
+    group_name='iiif_pres'
 )
 def works():
     work_list: [] = []
@@ -24,7 +25,8 @@ def works():
 
 @asset(
     ins={"works_to_scan": AssetIn("works")},
-    metadata={"owner": "jmk@tbrc.org", "domain": "ao", "help": "Creates validation result asset"}
+    metadata={"owner": "jimk@tbrc.org", "domain": "ao", "help": "Creates validation result asset"},
+    group_name='iiif_pres'
 )
 def scan_works(works_to_scan) -> List[Dict]:
     """
@@ -134,7 +136,8 @@ def test_ig_dim(dim_s3_path: str) -> bool:
     return valid
 
 
-@asset
+@asset(
+    group_name='iiif_pres')
 def failed_works(scan_works):
     """
     Summarizes the scan_works_job asset job results
@@ -145,7 +148,7 @@ def failed_works(scan_works):
     return failed_works
 
 
-@asset
+@asset(group_name='iiif_pres')
 def failed_image_groups(failed_works):
     """
     Extracts each failed image group
@@ -185,7 +188,8 @@ def parse_ig(ig_path: str) -> str:
     return Path(ig_path).parent.name
 
 
-@asset(ins={"failed_works": AssetIn(key="failed_works")})
+@asset(ins={"failed_works": AssetIn(key="failed_works")},
+    group_name='iiif_pres')
 def failed_work_ids(failed_works):
     """
     Extract [ { 'work': work , 'image_groups' :[ ig1 } ...] from failed_work data
@@ -207,7 +211,8 @@ def failed_work_ids(failed_works):
     return results
 
 
-@asset
+@asset(
+    group_name='iiif_pres')
 def fixed_image_groups(failed_image_groups):
     """
     Fixes the failed image groups
@@ -222,7 +227,8 @@ def fixed_image_groups(failed_image_groups):
 # What do I get if I just pass the materialized asset as an unnamed parm?
 # (ins={'work_igs': In(asset_key=AssetKey(['failed_work_ids']))})
 
-@asset
+@asset(
+    group_name='iiif_pres')
 def fix_igs(failed_work_ids):
     """
     Actually fix the bad image groups
