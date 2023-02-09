@@ -20,7 +20,7 @@ Steps:
 import json
 
 import pendulum
-from GbWorkflowUtils import get_gb_candidates
+from GbWorkflowUtils import gb_proj_candidates, gb_transform, gb_load
 
 from airflow.decorators import dag, task
 
@@ -46,11 +46,21 @@ located
             Fetch list of works from BUDA
             :return:
             """
-            return get_gb_candidates()
+            return gb_proj_candidates()
 
     @task
-    def transform() -> []:
+    def transform(raw_list: [str]) -> []:
         """
         Extracts workIds from work members
         :return:
         """
+        return gb_transform(raw_list)
+
+    @task
+    def load(works:[str]):
+        """
+        Loads works into a hardwired project
+        :param works: list of workRIDs in the DRS normalized schema (no BUDA decorator e.g. bdr:)
+        :return:
+        """
+        gb_load(works, "Google Books")
