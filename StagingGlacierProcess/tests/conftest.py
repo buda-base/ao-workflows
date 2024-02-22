@@ -62,3 +62,5 @@ def test_linear():
     task1 >> task2 >> task3
     dr: DagRun = dag.test()
     assert dr.state == DagRunState.SUCCESS
+    ff = dr.get_latest_runs()
+    print(ff)
