@@ -12,7 +12,8 @@ import json
 import boto3
 
 # Interested events - used by SQS and the permissions granter
-event_list: [] = ['s3:ObjectCreated:*',
+# Take 2 - there's a lot going on in a bucket, all I want is the restores
+event_list: [] = [
                   's3:ObjectRestore:*'
                   ]
 
