@@ -1,16 +1,5 @@
 dagster==1.0.4
 apache-airflow~=2.8.1
 apache-airflow-providers-amazon
-boto3~=1.21.21
-bdrc-volume-manifest-builder>=1.2.6
-bdrc-DBApps
-bdrc-bag
-bdrc-util
 internetarchive~=3.0.2
-SQLAlchemy~=1.4.39
-botocore~=1.24.21
-# requests==2.31 generates this:
-# ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_' (/Users/jimk/dev/ao-workflows/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)
-requests==2.28.2
-pytest
-pytest-helpers-namespace
+-r airflow-docker/StagingGlacierProcess-requirements.txt

@@ -76,7 +76,7 @@ UNGLACIERED_QUEUE_NAME: str = 'ManifestReadyToIntake'
 # For determining some file sys roots
 DARWIN_PLATFORM: str = "darwin"
 
-DEV_TIME_DELTA: timedelta = timedelta(seconds=30)
+DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
 PROD_TIME_DELTA: timedelta = timedelta(hours=1)
 
 # DEBUG:
