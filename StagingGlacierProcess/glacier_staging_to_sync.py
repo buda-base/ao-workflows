@@ -81,24 +81,30 @@ PROD_TIME_DELTA: timedelta = timedelta(hours=1)
 
 # DEBUG:
 MY_TIME_DELTA = DEV_TIME_DELTA
-REQUESTED_EVENTS = ['ObjectRestore:Completed']
+REQUESTED_EVENTS = ['ObjectRestore:Completed', 'ObjectCreated:Put']
 
-# TODO: Put this into an enviro. var?
-BASE_PATH = Path.home() / "dev" / "tmp" / "Projects" / "airflow" / "glacier_staging_to_sync"
+#
+# Use an environment variable to set the base path
+# See docker-compose.yml for the roots
+BASE_PATH = Path.home() / "bdrc" / "data"
+# This was when we were local
 DOWNLOAD_PATH = BASE_PATH / "Incoming"
 STAGING_PATH = BASE_PATH / "work"
-DEST_PATH = BASE_PATH / "archive"
+
+# See docker-compose.yml for actual location. Should be a bind
+# mount point
+APP_LOG_ROOT = Path.home() / "bdrc" / "log"
+
+# Not an actual file path, but a stem: see archive_ops.api:get_archive_location
+DEST_PATH = BASE_PATH / "Archive"
 
 # More staging:
-for ii in range(0,3):
-    os.makedirs(BASE_PATH / f"archive{ii:0>1}", exist_ok=True)
-for jj in range(0,99):
-    w_path:Path = Path(get_archive_location(str(BASE_PATH / "archive"), f"W{jj:0>4}"))
+#  jimk: 2024-03-08: These are created in docker-compose.yml
+# for ii in range(0,3):
+#     os.makedirs(BASE_PATH / f"Archive{ii:0>1}", exist_ok=True)
+for jj in range(0, 99):
+    w_path: Path = Path(get_archive_location(str(DEST_PATH), f"W{jj:0>2}"))
     os.makedirs(w_path.parent, exist_ok=True)
-
-
-
-os.makedirs(DEST_PATH, exist_ok=True)
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 os.makedirs(STAGING_PATH, exist_ok=True)
 
@@ -114,18 +120,21 @@ except:
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': datetime(2024, 2, 20),
+#    'start_date': datetime(2024, 2, 20),
     #    'email': ['your-email@example.com'],
     'email_on_failure': False,
     'email_on_retry': False,
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5),
-    'catchup': False
+    'retries': 22,
+    'retry_delay': timedelta(minutes=1),
+    'catchup': False,
+    'schedule_interval': None
 }
 
 # -----------------  mocks for testing / debugging ------------------------
 # Set up this copy for mock objects, because debagging is destructive
-mock_downloads: [str] = [str(shutil.copy(BASE_PATH / "save-W1FPL2251.bag.zip", DOWNLOAD_PATH / "miniW1FPL2251.bag.zip"))]
+# removed - just set a bag zip file in AWS s3 and set up mock_message to get it
+# mock_downloads: [str] = [
+#     str(shutil.copy(BASE_PATH / "save-W1FPL2251.bag.zip", DOWNLOAD_PATH / "miniW1FPL2251.bag.zip"))]
 
 mock_message: [] = [
     dict(eventVersion="2.1", eventSource="aws:s3", awsRegion="us-east-1", eventTime="2024-02-24T08:47:18.267Z",
@@ -147,10 +156,10 @@ mock_message: [] = [
                 "arn": "arn:aws:s3:::manifest.bdrc.org"
             },
             "object": {
-                "key": "ao1060/AWSIntake.zip",
-                "size": 1637,
-                "eTag": "6d3e031323ff7cb9ac0613d41a67d34e",
-                "versionId": "rHKK9t5p3kcbTA8vLv.bZCnNitDHjIgz",
+                "key": "ao1060/W1FPL2251.bag.zip",
+                "size": 78668981,
+                "eTag": "405202973fc17c6f4b26cb56022c6201-10",
+                "versionId": "vwfO4VqvGTlWeuSAtXDOhPzFhl.6YrSG",
                 "sequencer": "0065C3D18445E403D5"
             }
         }, glacierEventData={
@@ -160,6 +169,8 @@ mock_message: [] = [
             }
         })
 ]
+
+
 #  ----------------------   utils  -------------------------
 
 
@@ -184,7 +195,6 @@ def build_sync_env(execution_date) -> dict:
     export auditToolLogDateTimeDir="$logDir/audit-test-logs/$jobDate/$jobDateTime"
     """
 
-
     # set up times
     year, month, day, hour, minute, second, *_ = execution_date.timetuple()
 
@@ -198,9 +208,8 @@ def build_sync_env(execution_date) -> dict:
     current_mnt_root: str = "Volumes" if platform.system().lower() == DARWIN_PLATFORM else "mnt"
 
     # DEBUG: make local while testing
-    _root: Path = Path.home() / "dev" / "tmp" / "Projects" / "airflow" / "glacier_staging_to_sync" / "log"
-    # _root: Path = Path("/")
-    logDir: Path = _root / current_mnt_root / "processing" / "logs"
+    # _root: Path = Path.home() / "dev" / "tmp" / "Projects" / "airflow" / "glacier_staging_to_sync" / "log"
+    logDir: Path = APP_LOG_ROOT
     sync_log_home: Path = logDir / "sync-logs" / job_date / job_date_time
     sync_log_file = sync_log_home / f"sync-{job_date_time}.log"
     audit_log_home: Path = logDir / "audit-test-logs" / job_date / job_date_time
@@ -208,7 +217,9 @@ def build_sync_env(execution_date) -> dict:
     os.makedirs(audit_log_home, exist_ok=True)
 
     return {
-        "DB_CONFIG": f"{prod_level}:~/.config/bdrc/db_apps.config",
+        # "DB_CONFIG": f"{prod_level}:~/.config/bdrc/db_apps.config",
+        # docker_db_apps has to reference drs.cnf in /run/secrets
+        "DB_CONFIG": f"{prod_level}:/run/secrets/docker_db_apps",
         "hostName": "airflow_platform",
         "userName": "airflow_platform_user",
         "logDipVersion": util_ver,
@@ -220,8 +231,10 @@ def build_sync_env(execution_date) -> dict:
         "syncLogDateTimeDir": str(sync_log_home),
         "syncLogDateTimeFile": str(sync_log_file),
         "syncLogTempDir": str(sync_log_home / "tempFiles"),
-        "PATH" : os.getenv("PATH")
+        "PATH": os.getenv("PATH")
     }
+
+
 # ----------------------   airflow task declarations  -------------------------
 
 @task
@@ -230,22 +243,41 @@ def get_restored_object_messages():
     Pull a message from SQS
     :return:
     """
+    return mock_message
     import boto3
 
     # read from an SQS Queue
-    sqs = boto3.client('sqs')
+    # Create an SQS session
+
+    # Open a secrets file and pour it into a config object
+    # if /run/secrets exists, it is a docker secret
+    # Otherwise, just open
+    if not os.path.exists('/run/secrets'):
+        ases = boto3.Session(profile_name='default')
+    else:
+
+    sqs = boto3.client('sqs', session=boto3.Session(aws_access_key_id='<get_from run/secrets>',
+                                                    aws_secret_access_key='<get_from run/secrets>'))
 
     # URL of your SQS queue
     queue_url = 'https://sqs.us-east-1.amazonaws.com/170602929106/ManifestReadyToIntake'
 
+    print(f"Going in to {queue_url}")
     # Receive message from SQS queue
     response = sqs.receive_message(
-        QueueUrl=queue_url,
-        AttributeNames=['All'],
-        MaxNumberOfMessages=5,
-        VisibilityTimeout=10,  # hide it from other consumers for 10 seconds
-        WaitTimeSeconds=0
+        wait_time_seconds=1,
+        queue_url=queue_url,
+        number_messages=5,
+        visibility_timeout=10
+
+        # QueueUrl=queue_url,
+        # AttributeNames=['All'],
+        # MaxNumberOfMessages=5,
+        # VisibilityTimeout=10  # hide it from other consumers for 10 seconds
+#        WaitTimeSeconds=5,
     )
+
+    print(f"Received {response}")
 
     s3_records = []
 
@@ -275,6 +307,7 @@ def get_restored_object_messages():
     return mock_message
     # return s3_records
 
+
 @task
 def download_from_messages(s3_records) -> [Path]:
     """
@@ -293,7 +326,8 @@ def download_from_messages(s3_records) -> [Path]:
         try:
             bucket = s3_record['s3']['bucket']['name']
             key = s3_record['s3']['object']['key']
-            key += "simulate_failureHack"
+            # DEBUG
+            # key += "simulate_failureHack"
 
             download_full_path: Path = DOWNLOAD_PATH / key
             dfp_str: str = str(download_full_path)
@@ -312,8 +346,7 @@ def download_from_messages(s3_records) -> [Path]:
     else:
         print('No messages')
 
-    return mock_downloads
-    # return downloaded_paths
+    return downloaded_paths
 
 
 @task
@@ -341,7 +374,7 @@ def sync_debagged(downloads: [str], **context):
     :return: None. this os tje terminal task
     """
 
-    env:{} = build_sync_env(context['execution_date'])
+    env: {} = build_sync_env(context['execution_date'])
 
     for download in downloads:
         # syncOneWork.sh [ -h ] [ -a archiveParent ] [ -w webParent ] [ -s successWorkList ] workPath
@@ -352,15 +385,17 @@ def sync_debagged(downloads: [str], **context):
         ).execute(context)
 
 
+with DAG('sqs_manual_dag', schedule=None) as gs_dag:
+    notify = BashOperator(
+        task_id="notify",
+        bash_command='echo "HOWDY! There are now $(ls /tmp/images/ | wc -l) images."')
 
-with DAG(
-        'sqs_sensor_dag',
-        default_args=default_args,
-        schedule=MY_TIME_DELTA) as gs_dag:
     msgs = get_restored_object_messages()
     downloads = download_from_messages(msgs)
     to_sync = debag_downloads(downloads)
     syncd = sync_debagged(to_sync)
+
+
     #
     # POS: can't get output
     # sqs_sensor = SqsSensor(
@@ -392,4 +427,5 @@ with DAG(
 
 # sqs_sensor >> process_task
 if __name__ == '__main__':
-    gs_dag.test()
+#    gs_dag.test()
+    gs_dag.cli()
