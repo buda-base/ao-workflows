@@ -64,7 +64,7 @@ The ``docker-compose.yml`` file is the configuration file for the services that 
 Most of it is boilerplate (from the O'Reilly "Data Pipelines in Airflow" book - the sections that support our workflow are:
 
 
-..code-block:: yaml
+.. code-block:: yaml
     :caption: scheduler mount points
     :name: source: docker-compose.yml (1)
         volumes:
@@ -97,7 +97,7 @@ Most of it is boilerplate (from the O'Reilly "Data Pipelines in Airflow" book - 
 The above fragment links **host** directories to **container** directories, and ``secrets`` mounts
 to the service. Note that other services **cannot** access these secrets, without access from this file
 
-..code-block:: yaml
+.. code-block:: yaml
    :caption: secrets
    :name: source: docker-compose.yml (2)
 
