@@ -2,22 +2,37 @@
 # +5 Github Copilot
 # Use the original image as a base
 FROM apache/airflow:2.8.1-python3.11
+
+# Severely stupid warning alert - these resources must all be relative
+# to the Dockerfile path! Or maybe it's security.
 ARG SYNC_SCRIPTS_HOME
+ARG PY_REQS
+
 # Install pip - DNA on some macos dockers
 # RUN apt-get update && apt-get install -y python3-pip
 
+# Add audit tool. As superuser
+USER root
+# Get https://github.com/buda-base/asset-manager/releases/download/v1.0-beta/audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb
+COPY audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb .
+RUN dpkg  -i audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb
+RUN update-alternatives --install /usr/local/bin/audit-tool audit-tool /opt/audit-tool/audit-v1-beta/bin/audit-tool 50
 
+USER airflow
+WORKDIR /home/airflow
 # Copy specific scripts for the sync operation
-RUN echo "Copying sync scripts from $SYNC_SCRIPTS_HOME"
-RUN mkdir -p /opt/airflow/sync-scripts
-COPY $SYNC_SCRIPTS_HOME /opt/airflow/sync-scripts
-COPY  ./StagingGlacierProcess-requirements.txt /opt/airflow/sync-scripts
-# RUN chown -R airflow:airflow /opt/airflow/sync_scripts
+RUN mkdir -p bin
+# This is dynamic, so not copied from static
+ADD $SYNC_SCRIPTS_HOME bin
+# ADD $PY_REQS .
+# RUN chown -R airflow:airflow /opt/airflow/sync-scripts
 # Install sync dependencies
-RUN pip3 install -r /opt/airflow/sync-scripts/sync-requirements.txt
-
-# Install Glacier staging dependencies
-RUN pip3 install -r /opt/airflow/sync-scripts/StagingGlacierProcess-requirements.txt
+RUN pip3 install --user --no-cache-dir -r $PY_REQS
 
 # Make the sync_scripts accessible.
-ENV PATH="${PATH}:/opt/airflow/sync_scripts"
+ENV PATH="${PATH}:/home/airflow/bin"
+
+#
+# I really should use a volume here, to persist across runs
+RUN mkdir -p  bdrc/data && chown -R airflow bdrc/data
+

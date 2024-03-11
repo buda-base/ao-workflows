@@ -57,12 +57,10 @@ We expect to get, in Response['Messages][0]['Body']['Records'] a set if dicts,
 
 import json
 import os
-import shutil
 from pathlib import Path
 import platform
 
 from airflow.operators.bash import BashOperator
-from pendulum import datetime
 
 from airflow import DAG
 from airflow.decorators import task
@@ -70,6 +68,9 @@ from datetime import timedelta
 from bdrc_bag import bag_ops
 from util_lib.version import bdrc_util_version
 from archive_ops.api import get_archive_location
+
+from staging_utils import create_session
+
 
 UNGLACIERED_QUEUE_NAME: str = 'ManifestReadyToIntake'
 
@@ -85,7 +86,8 @@ REQUESTED_EVENTS = ['ObjectRestore:Completed', 'ObjectCreated:Put']
 
 #
 # Use an environment variable to set the base path
-# See docker-compose.yml for the roots
+# See docker-compose.yml for the roots/home/a
+#
 BASE_PATH = Path.home() / "bdrc" / "data"
 # This was when we were local
 DOWNLOAD_PATH = BASE_PATH / "Incoming"
@@ -96,7 +98,8 @@ STAGING_PATH = BASE_PATH / "work"
 APP_LOG_ROOT = Path.home() / "bdrc" / "log"
 
 # Not an actual file path, but a stem: see archive_ops.api:get_archive_location
-DEST_PATH = BASE_PATH / "Archive"
+# This value is a docker Bind Mount to a local dir - see ../airflow-docker/docker-compose.yml
+DEST_PATH = Path.home() / "extern" / "Archive"
 
 # More staging:
 #  jimk: 2024-03-08: These are created in docker-compose.yml
@@ -120,7 +123,7 @@ except:
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-#    'start_date': datetime(2024, 2, 20),
+    #    'start_date': datetime(2024, 2, 20),
     #    'email': ['your-email@example.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -219,7 +222,8 @@ def build_sync_env(execution_date) -> dict:
     return {
         # "DB_CONFIG": f"{prod_level}:~/.config/bdrc/db_apps.config",
         # docker_db_apps has to reference drs.cnf in /run/secrets
-        "DB_CONFIG": f"{prod_level}:/run/secrets/docker_db_apps",
+        "DEBUG_SYNC": "true",
+        "DB_CONFIG": f"{prod_level}:/run/secrets/db_apps",
         "hostName": "airflow_platform",
         "userName": "airflow_platform_user",
         "logDipVersion": util_ver,
@@ -249,15 +253,7 @@ def get_restored_object_messages():
     # read from an SQS Queue
     # Create an SQS session
 
-    # Open a secrets file and pour it into a config object
-    # if /run/secrets exists, it is a docker secret
-    # Otherwise, just open
-    if not os.path.exists('/run/secrets'):
-        ases = boto3.Session(profile_name='default')
-    else:
-
-    sqs = boto3.client('sqs', session=boto3.Session(aws_access_key_id='<get_from run/secrets>',
-                                                    aws_secret_access_key='<get_from run/secrets>'))
+    sqs = create_session().client('sqs')
 
     # URL of your SQS queue
     queue_url = 'https://sqs.us-east-1.amazonaws.com/170602929106/ManifestReadyToIntake'
@@ -274,7 +270,7 @@ def get_restored_object_messages():
         # AttributeNames=['All'],
         # MaxNumberOfMessages=5,
         # VisibilityTimeout=10  # hide it from other consumers for 10 seconds
-#        WaitTimeSeconds=5,
+        #        WaitTimeSeconds=5,
     )
 
     print(f"Received {response}")
@@ -309,7 +305,7 @@ def get_restored_object_messages():
 
 
 @task
-def download_from_messages(s3_records) -> [Path]:
+def download_from_messages(s3_records) -> [str]:
     """
 
     :param s3_records: object restored format
@@ -334,11 +330,11 @@ def download_from_messages(s3_records) -> [Path]:
             os.makedirs(download_full_path.parent, exist_ok=True)
 
             hash = s3_record['s3']['object']['eTag']
-            s3 = boto3.client('s3')
+            s3 = create_session('default').client('s3')
             s3.download_file(bucket, key, dfp_str)
 
             print(f"Downloaded S3://{bucket}/{key} to {dfp_str}")
-            downloaded_paths.append(download_full_path)
+            downloaded_paths.append(str(download_full_path))
         except KeyError as e:
             print(f'KeyError: {e}')
         except ClientError as e:
@@ -395,7 +391,6 @@ with DAG('sqs_manual_dag', schedule=None) as gs_dag:
     to_sync = debag_downloads(downloads)
     syncd = sync_debagged(to_sync)
 
-
     #
     # POS: can't get output
     # sqs_sensor = SqsSensor(
@@ -427,5 +422,5 @@ with DAG('sqs_manual_dag', schedule=None) as gs_dag:
 
 # sqs_sensor >> process_task
 if __name__ == '__main__':
-#    gs_dag.test()
+    #    gs_dag.test()
     gs_dag.cli()
