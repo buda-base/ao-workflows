@@ -55,18 +55,15 @@ Building the Airflow Docker container
 --------------------------------------------------------------------------------
 **Operational steps**
 
-``run-bdrc-airflow.sh`` copies credential files into a local directory that is linked to the docker container
+**run-bdrc-airflow.sh**  copies credential files into a local directory that is linked to the docker container
 that hosts the image.
 
-**``docker-compose.yml``**
-
-The ``docker-compose.yml`` file is the configuration file for the services that make up the airflow instance.
+**docker-compose.yml** The ``docker-compose.yml`` file is the configuration file for the services that make up the airflow instance.
 Most of it is boilerplate (from the O'Reilly "Data Pipelines in Airflow" book - the sections that support our workflow are:
 
 
-.. code-block:: yaml
-    :caption: scheduler mount points
-    :name: source: docker-compose.yml (1)
+..code-block:: yaml
+
         volumes:
           # DEV/TEST use bind mounts
           # System logging - /opt/airflow/logs is the airflow system default
@@ -95,13 +92,9 @@ Most of it is boilerplate (from the O'Reilly "Data Pipelines in Airflow" book - 
           - aws
 
 The above fragment links **host** directories to **container** directories, and ``secrets`` mounts
-to the service. Note that other services **cannot** access these secrets, without access from this file
+to the service. Note that other services **cannot** access these secrets, without access from this file.
 
 .. code-block:: yaml
-   :caption: secrets
-   :name: source: docker-compose.yml (2)
-
-
     secrets:
       db_apps:
         file:
