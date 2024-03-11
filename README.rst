@@ -62,7 +62,7 @@ that hosts the image.
 Most of it is boilerplate (from the O'Reilly "Data Pipelines in Airflow" book - the sections that support our workflow are:
 
 
-..code-block:: yaml
+.. code-block:: yaml
 
         volumes:
           # DEV/TEST use bind mounts
@@ -95,6 +95,7 @@ The above fragment links **host** directories to **container** directories, and 
 to the service. Note that other services **cannot** access these secrets, without access from this file.
 
 .. code-block:: yaml
+
     secrets:
       db_apps:
         file:
