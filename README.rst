@@ -115,5 +115,5 @@ The ``.secrets`` directory **must never** be checked into the repository.
 
 Running the Airflow Docker container
 --------------------------------------------------------------------------------
-After the above steps, ``docker-compose up -d`` (the ``-d`` flag just launches the services in the background.
+After the above steps, ``docker-compose up -d`` The ``-d`` flag just launches the services in the background.
 
