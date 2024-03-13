@@ -24,7 +24,7 @@ WORKDIR /home/airflow
 RUN mkdir -p bin
 # This is dynamic, so not copied from static
 ADD $SYNC_SCRIPTS_HOME bin
-# ADD $PY_REQS .
+ADD $PY_REQS .
 # RUN chown -R airflow:airflow /opt/airflow/sync-scripts
 # Install sync dependencies
 RUN pip3 install --user --no-cache-dir -r $PY_REQS

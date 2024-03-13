@@ -12,9 +12,8 @@ x-environment: &airflow_environment
 
 # x-airflow-image: &airflow_image apache/airflow:2.0.0-python3.8
 # jimk - lets get frisky
-# Origx-airflow-image: &airflow_image apache/airflow:2.8.1-python3.11
 # See ./dockerfile
-x-airflow-image: &airflow_image bdrc-airflow
+x-airflow-image: &airflow_image ${COMPOSE_AIRFLOW_IMAGE}
 #
 # Bit of a bust
 #x-pycharm-helper: &pycharm_helper pycharm_helpers:PY-233.11799.298
@@ -26,6 +25,14 @@ x-airflow-image: &airflow_image bdrc-airflow
 x-dbrc-log: &bdrc_log qa
 # ====================================== /AIRFLOW ENVIRONMENT VARIABLES ======================================
 services:
+  any-name:
+    build:
+      context: ${COMPOSE_BUILD_DIR}
+      dockerfile: ${COMPOSE_BDRC_AIRFLOW_DOCKERFILE:-Dockerfile-bdrc}
+      args:
+        SYNC_SCRIPTS_HOME: ${BIN}
+        PY_REQS: ${COMPOSE_PY_REQS}
+    image: ${COMPOSE_AIRFLOW_IMAGE}
   postgres:
     image: postgres:12-alpine
     environment:
@@ -96,13 +103,13 @@ services:
 secrets:
   db_apps:
     file:
-      .secrets/db_apps.config
+      ${SECRETS}/db_apps.config
   drs_cnf:
     file:
-      .secrets/drs.config
+      ${SECRETS}/drs.config
   aws:
     file:
-      .secrets/aws-credentials
+      ${SECRETS}/aws-credentials
 
 volumes:
   staging:
