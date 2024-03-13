@@ -12,6 +12,7 @@
 
 usage() {
 echo "Usage: $(basename $0) [-b|--build] [-r|--run] [-h|--help] [ -r|--refresh_build ] [-m|--requirements <dag-requirements-file>] [-l|--build_dir <build-dir>]"
+echo "  -d|--down: suspend the airflow image"
 echo "  -b|--build: build a replacement airflow image"
 echo "  -r|--run: run the composed container ** default action if no flags given"
 echo "  -h|--help"

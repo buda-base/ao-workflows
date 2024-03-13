@@ -37,30 +37,28 @@ to have the BDRC environment installed before the DAGs can run. It needs two cla
 - Git pull ``buda-base/ao-workflows`` into ``WORKFLOW_DEV_DIR``.
 - Git pull ``buda-base/archive-ops`` into ``AO_DEV_DIR``.
 - Start the Desktop Docker (or the docker daemon on Linux)
-- Edit ``build-bdrc-airflow.sh`` to locate ``AO_DEV_DIR`` This script installs:
-     - Audit tool
-     - The BDRC environment:
-         - credentials
-         - scripts
-         - Python packages
-- Run ``build-bdrc-airflow.sh`` to build the modified image. This deposits the image in the local docker repo.
+- run `bdrc-docker.sh` with your choice of options:
 
-When you are done, you should have an image that ``docker compose`` can use.
+.. code-block:: bash
 
-Building the airflow container.
--------------------------------
-This step prepares to run the ``docker compose`` command.
-Running ``airflow-docker``
---------------------------
+    ❯ ./bdrc-docker.sh  --help
+    Usage: bdrc-docker.sh [-b|--build] [-r|--run] [-h|--help] [ -r|--refresh_build ] [-m|--requirements <dag-requirements-file>] [-l|--build_dir <build-dir>]
+      -b|--build: build a replacement airflow image
+      -r|--run: run the composed container ** default action if no flags given
+      -h|--help
+      -r|--refresh_build: if building, purge all built material and start over
+      -m|--requirements <dag-requirements-file>: default: ./StagingGlacierProcess-requirements.txt
+      -l|--build_dir <build-dir>: default: ~/tmp/compose-build
 
-Using the modified image, which is installed in the native ``docker`` environment,
-``cd DEV_DIR/ao-workflows/airflow-docker``
-``docker-compose up -d`` To start the container.
+You can use multiple options. (although  --run and --down only provide a smoke test)
+The default ``build_dir`` is created if it doesn't exist
+Details
+-------
+:StagingGlacierProcess-requirements.txt: specifies the python libraries that are required for the ``StagingGlacierProcess`` DAG to run.
+
+:syncAnywhere/requirements.txt: specifies the python libraries that are required for the internal shell script that the glacier_staging_dag runs. (This what a native Linux user would use when provisioning their environment using ``archive-ops/scripts/deployments/copyLinksToBin``)
+
+:secrets handling: It's well, a saucerful of secret. Code warriors are invited to examine.
 
 
-``docker-compose.yml`` defines the containers that comprise the airflow platform.
-Typically, you would use the ``docker-compose up-d`` command to start the containers.
-
-StagingGlacierProcess
-=====================
 
