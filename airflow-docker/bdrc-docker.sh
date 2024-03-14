@@ -10,6 +10,14 @@
 # [-m|--requirements <dag-requirements-file>] default: "./StagingGlacierProcess-requirements.txt"
 # [-l|--build_dir <build-dir>]" default ~/tmp/compose-build
 
+#
+# MODIFY THIS FIRST
+# dev value
+export ARCH_ROOT=~/dev/tmp/Projects/airflow
+# prod value on Linux
+# export ARCH_ROOT=/mnt
+
+# do 1ce
 usage() {
 echo "Usage: $(basename $0) [-b|--build] [-r|--run] [-h|--help] [ -r|--refresh_build ] [-m|--requirements <dag-requirements-file>] [-l|--build_dir <build-dir>]"
 echo "  -d|--down: suspend the airflow image"
@@ -22,6 +30,17 @@ echo "  -l|--build_dir <build-dir>: default: ~/tmp/compose-build"
 }
 
 
+init_env() {
+    for d in $(seq 0 99); do
+    todo=${ARCH_ROOT}/Archive$(($d/25))/$(printf "%02d" $d)
+    mkdir -p $todo || exit 1
+    chmod -R 777 $todo
+ done
+
+exit 0
+
+
+    }
 prepare_pyPI_requirements() {
   # Merge StagingGlacier and sync requirements
   # ARG - no /tmp - must be local
@@ -52,7 +71,7 @@ down_flag=
 build_flag=
 run_flag=
 refresh_flag=
-OPTIONS=$(getopt -o dbrhfm:l: --long down,build,run,help, refresh,requirements,build_dir -- "$@")
+OPTIONS=$(getopt -o dbrhfm:l:i: --long down,build,run,help, refresh,requirements,build_dir,init -- "$@")
 
 while true; do  # Parse command line options
   case "$1" in
@@ -85,6 +104,12 @@ while true; do  # Parse command line options
       usage
       exit 1
       ;;
+
+    -i|--init)
+      init_env $2
+      exit 0
+      ;;
+
     --)
       shift
       break
@@ -103,7 +128,7 @@ fi
 set -e  # all or nothing
 
 # resolve DAG_REQUIREMENTS
-export DAG_REQUIREMENTS=${tdag:-DAG_REQUIREMENTS_DEFAULT}
+export DAG_REQUIREMENTS=${tdag:-$DAG_REQUIREMENTS_DEFAULT}
 if [[ -n "${build_flag}" ]] ; then
   if [[ ! -f ${DAG_REQUIREMENTS} ]]  ; then
     echo "DAG requirements file not found: ${DAG_REQUIREMENTS}"
