@@ -1,7 +1,7 @@
 # create custom container for bdrc airflow scheduler
 # +5 Github Copilot
 # Use the original image as a base
-FROM apache/airflow:2.8.1-python3.11
+FROM apache/airflow:2.8.3-python3.11
 
 # Severely stupid warning alert - these resources must all be relative
 # to the Dockerfile path! Or maybe it's security.
@@ -17,6 +17,10 @@ USER root
 COPY audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb .
 RUN dpkg  -i audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb
 RUN update-alternatives --install /usr/local/bin/audit-tool audit-tool /opt/audit-tool/audit-v1-beta/bin/audit-tool 50
+#
+# Will this help log permissions on debian?
+# Apparently not.
+# RUN chown -R airflow:0 /opt/airflow/logs
 
 USER airflow
 WORKDIR /home/airflow
@@ -34,5 +38,6 @@ ENV PATH="${PATH}:/home/airflow/bin"
 
 #
 # I really should use a volume here, to persist across runs
-RUN mkdir -p  bdrc/data && chown -R airflow bdrc/data
+RUN mkdir -p  bdrc/data
+# && chown -R airflow bdrc/data
 

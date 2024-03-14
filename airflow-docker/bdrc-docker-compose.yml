@@ -12,8 +12,9 @@ x-environment: &airflow_environment
 
 # x-airflow-image: &airflow_image apache/airflow:2.0.0-python3.8
 # jimk - lets get frisky
-# See ./dockerfile
-x-airflow-image: &airflow_image ${COMPOSE_AIRFLOW_IMAGE}
+# See ./Dockerfile-bdrc
+# x-airflow-image: &airflow_image ${COMPOSE_AIRFLOW_IMAGE}
+x-airflow-image: &airflow_image bdrc-airflow
 #
 # Bit of a bust
 #x-pycharm-helper: &pycharm_helper pycharm_helpers:PY-233.11799.298
@@ -32,7 +33,8 @@ services:
       args:
         SYNC_SCRIPTS_HOME: ${BIN}
         PY_REQS: ${COMPOSE_PY_REQS}
-    image: ${COMPOSE_AIRFLOW_IMAGE}
+    image: *airflow_image
+
   postgres:
     image: postgres:12-alpine
     environment:
@@ -58,8 +60,16 @@ services:
     ports:
       - "8089:8080"
     volumes:
+      - logs:/opt/airflow/logs
       # DEV/TEST use bind mounts
-      - /Users/jimk/dev/tmp/Projects/airflow/syslog:/opt/airflow/logs
+      # Debian prb: two services on the same /opt/airflow logs? webserver says it can't write. I only care scheduler
+      # Could it be that both webserver and scheduler need this?
+      # Or neither?
+      # - /home/jimk/dev/tmp/Projects/airflow/log:/opt/airflow/logs
+      #all of a sudden, I need to do this under Debian ?
+      # No, in fact it breaks things
+      # - /home/jimk/dev/ao-workflows/StagingGlacierProcess:/opt/airflow/dags
+
     environment: *airflow_environment
     command: webserver
 
@@ -71,27 +81,19 @@ services:
     volumes:
       # DEV/TEST use bind mounts
       # System logging - /opt/airflow/logs is the airflow system default
-      # TODO: Migrate to debian
-      - /Users/jimk/dev/tmp/Projects/airflow/syslog:/opt/airflow/logs
-      # TODO: Migrate to debian
-      # App logging. Replicate in glacier_staging_to_sync.py
-      - /Users/jimk/dev/tmp/Projects/airflow/log:/home/airflow/log
+      # - /home/jimk/dev/tmp/Projects/airflow/log:/opt/airflow/logs
       # We don't need to persist stating in a resource shared between containers
       # - staging:/home/airflow/staging
-      # Export actual sync product - this is wrto bodhi/sattva
-#      - /mnt/Archive0:/var/mnt/Archive0
-#      - /mnt/Archive1:/var/mnt/Archive1
-#      - /mnt/Archive2:/var/mnt/Archive2
-#      - /mnt/Archive3:/var/mnt/Archive3
+      - logs:/opt/airflow/logs
     # For testing on local mac. This is a good reason for not
     # using files, but a service
-      - /Users/jimk/dev/tmp/Archive0:/home/airflow/extern/Archive0
-      - /Users/jimk/dev/tmp/Archive1:/home/airflow/extern/Archive1
-      - /Users/jimk/dev/tmp/Archive2:/home/airflow/extern/Archive2
-      - /Users/jimk/dev/tmp/Archive3:/home/airflow/extern/Archive3
+      - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
+      - ${ARCH_ROOT:-/mnt}/Archive1:/home/airflow/extern/Archive1
+      - ${ARCH_ROOT:-/mnt}/Archive2:/home/airflow/extern/Archive2
+      - ${ARCH_ROOT:-/mnt}/Archive3:/home/airflow/extern/Archive3
 # This is for pyCharm development only.
 # DEBUG:
-      - /Users/jimk/dev/ao-workflows/StagingGlacierProcess:/opt/airflow/dags
+      - /home/jimk/dev/ao-workflows/StagingGlacierProcess:/opt/airflow/dags
     environment: *airflow_environment
     command: scheduler
 
@@ -112,5 +114,6 @@ secrets:
       ${SECRETS}/aws-credentials
 
 volumes:
-  staging:
-  logs:
+#   staging:
+    logs:
+    
