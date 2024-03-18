@@ -19,14 +19,15 @@ export ARCH_ROOT=~/dev/tmp/Projects/airflow
 
 # do 1ce
 usage() {
-echo "Usage: $(basename $0) [-b|--build] [-r|--run] [-h|--help] [ -r|--refresh_build ] [-m|--requirements <dag-requirements-file>] [-l|--build_dir <build-dir>]"
+echo "Usage: $(basename $0) [-b|--build] [-r|--run] [-h|--help] [ -r|--refresh_build ] [-m|--requirements <dag-requirements-file>] [-l|--build_dir <build-dir>]  <docker-args> "
 echo "  -d|--down: suspend the airflow image"
 echo "  -b|--build: build a replacement airflow image"
-echo "  -r|--run: run the composed container ** default action if no flags given"
+echo "  -u|--up: run the composed container ** default action if no flags given"
 echo "  -h|--help"
 echo "  -r|--refresh_build: if building, purge all built material and start over"
 echo "  -m|--requirements <dag-requirements-file>: default: ./StagingGlacierProcess-requirements.txt"
 echo "  -l|--build_dir <build-dir>: default: ~/tmp/compose-build"
+echo "  <docker args> extra args for docker compose"
 }
 
 
@@ -58,6 +59,10 @@ export COMPOSE_AIRFLOW_IMAGE=bdrc-airflow
 export COMPOSE_BDRC_DOCKER=bdrc-docker-compose.yml
 export COMPOSE_BDRC_DOCKERFILE=Dockerfile-bdrc
 export BIN=bin
+
+# Setting these to blank muzzles compose warnings
+export SECRETS=""
+export COMPOSE_PY_REQS=""
 #
 # Location for everything that needs to be added to the image.
 # used in 'docker-compose-bdrc.yml in the build step
@@ -83,7 +88,7 @@ while true; do  # Parse command line options
       build_flag=1
       shift
       ;;
-    -r|--run)
+    -u|--up)
       run_flag=1
       shift
       ;;
@@ -166,7 +171,7 @@ if [[ -n "${build_flag}" ]] ; then
 #
   # finally, do_real_work
   # What were formerly build args are now environment variables
-  docker compose --file "${COMPOSE_BDRC_DOCKER}" build  --no-cache
+  docker compose --file "${COMPOSE_BDRC_DOCKER}" build  --no-cache $@
 fi
 
 if [[ -n "${run_flag}" ]] ; then
@@ -176,11 +181,11 @@ if [[ -n "${run_flag}" ]] ; then
   cp -v ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
   ./extract-section.pl ~/.aws/credentials default  > ${SECRETS}/aws-credentials || exit 1
   chmod u-w "${SECRETS}"
-  docker compose --file "${COMPOSE_BDRC_DOCKER}" up -d
+  docker compose --file "${COMPOSE_BDRC_DOCKER}" up -d $@
 fi
 
 if [[ -n "${down_flag}" ]] ; then
-  docker compose --file "${COMPOSE_BDRC_DOCKER}" down
+  docker compose --file "${COMPOSE_BDRC_DOCKER}" down $@
 fi
 
 

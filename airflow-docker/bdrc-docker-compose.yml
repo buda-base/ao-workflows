@@ -59,8 +59,8 @@ services:
       - postgres
     ports:
       - "8089:8080"
-    volumes:
-      - logs:/opt/airflow/logs
+    # volumes:
+      # - ./logs:/opt/airflow/logs
       # DEV/TEST use bind mounts
       # Debian prb: two services on the same /opt/airflow logs? webserver says it can't write. I only care scheduler
       # Could it be that both webserver and scheduler need this?
@@ -84,7 +84,7 @@ services:
       # - /home/jimk/dev/tmp/Projects/airflow/log:/opt/airflow/logs
       # We don't need to persist stating in a resource shared between containers
       # - staging:/home/airflow/staging
-      - logs:/opt/airflow/logs
+      - ./logs:/opt/airflow/logs
     # For testing on local mac. This is a good reason for not
     # using files, but a service
       - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
@@ -93,7 +93,7 @@ services:
       - ${ARCH_ROOT:-/mnt}/Archive3:/home/airflow/extern/Archive3
 # This is for pyCharm development only.
 # DEBUG:
-      - /home/jimk/dev/ao-workflows/StagingGlacierProcess:/opt/airflow/dags
+      - ./dags:/opt/airflow/dags
     environment: *airflow_environment
     command: scheduler
 
@@ -113,7 +113,7 @@ secrets:
     file:
       ${SECRETS}/aws-credentials
 
-volumes:
+# volumes:
 #   staging:
-    logs:
+#    logs:
     

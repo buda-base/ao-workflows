@@ -38,6 +38,5 @@ ENV PATH="${PATH}:/home/airflow/bin"
 
 #
 # I really should use a volume here, to persist across runs
-RUN mkdir -p  bdrc/data
-# && chown -R airflow bdrc/data
+RUN mkdir -p  bdrc/data && chown -R airflow:0 bdrc/data && chmod 777 bdrc/data
 

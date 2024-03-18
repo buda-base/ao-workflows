@@ -381,7 +381,7 @@ def sync_debagged(downloads: [str], **context):
         ).execute(context)
 
 
-with DAG('sqs_manual_dag', schedule=None) as gs_dag:
+with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
     notify = BashOperator(
         task_id="notify",
         bash_command='echo "HOWDY! There are now $(ls /tmp/images/ | wc -l) images."')
