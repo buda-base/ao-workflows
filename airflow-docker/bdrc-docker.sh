@@ -171,6 +171,9 @@ if [[ -n "${build_flag}" ]] ; then
 #
   # finally, do_real_work
   # What were formerly build args are now environment variables
+  #
+  # D'OH AIRFLOW_UID is a **BUILD**arg
+  export AIRFLOW_UID=$(id -u)
   docker compose --file "${COMPOSE_BDRC_DOCKER}" build  --no-cache $@
 fi
 

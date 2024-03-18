@@ -59,8 +59,8 @@ services:
       - postgres
     ports:
       - "8089:8080"
-    # volumes:
-      # - ./logs:/opt/airflow/logs
+    volumes:
+      - ./logs:/opt/airflow/logs
       # DEV/TEST use bind mounts
       # Debian prb: two services on the same /opt/airflow logs? webserver says it can't write. I only care scheduler
       # Could it be that both webserver and scheduler need this?

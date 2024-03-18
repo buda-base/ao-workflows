@@ -68,8 +68,10 @@ SECRETS=.docker-secrets
 BIN=
 COMPOSE_BUILD_DIR=.
 ARCH_ROOT=.
-AIRFLOW_UID=1000
-AIRFLOW_GID=0
 EOF
+
+# They say this is a BUILD image arg, not a runtime arg
+# AIRFLOW_UID=1000
+# AIRFLOW_GID=0
 
 
