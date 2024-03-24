@@ -87,7 +87,8 @@ services:
       - ./logs:/opt/airflow/logs
     # For testing on local mac. This is a good reason for not
     # using files, but a service
-      - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
+      - /mnt/Archive0/00/TestPermissions:/home/airflow/extern/Archive0/00/TestPermissions
+# For testing only put this back      - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
       - ${ARCH_ROOT:-/mnt}/Archive1:/home/airflow/extern/Archive1
       - ${ARCH_ROOT:-/mnt}/Archive2:/home/airflow/extern/Archive2
       - ${ARCH_ROOT:-/mnt}/Archive3:/home/airflow/extern/Archive3
