@@ -36,14 +36,18 @@ def _test_access():
     #     scheduler:
     #          ...
     #          volumes:
-#               - / mnt / Archive0 / 00 / TestArchivePermissions: / home / airflow / extern / Archive0 / 00 / TestArchivePermissions
-    test_perms_path: Path = Path.home() /  "extern" / "Archive0" / "00" / "TestArchivePermissions"
+    #               - /mnt/Archive0/00/TestArchivePermissions:/home/airflow/extern/Archive0/00/TestArchivePermissions
+    test_perms_path: Path = Path.home() / "extern" / "Archive0" / "00" / "TestArchivePermissions"
     tested_string: str = os.makedirs(test_perms_path,exist_ok=True)
     test_perms_instance = test_perms_path /  "add_multiples"
     with open(Path.joinpath(test_perms_instance), 'a') as test_perms_file:
         msg:str =f"Howdy from :{str(test_perms_instance)}:  on {pendulum.now().to_iso8601_string()}"
         print(msg)
         test_perms_file.writelines([msg])
+    print(f"Tested: {tested_string}")
+    for dentry in  os.scandir(test_perms_path):
+        print(f"found: {dentry.name}")
+
 
 
 with DAG('test_access_permissions_dag', schedule=None, tags=['bdrc', 'test']) as tp_dag:

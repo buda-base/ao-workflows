@@ -82,21 +82,15 @@ services:
     depends_on:
       - postgres
     volumes:
-      # DEV/TEST use bind mounts
-      # System logging - /opt/airflow/logs is the airflow system default
-      # - /home/jimk/dev/tmp/Projects/airflow/log:/opt/airflow/logs
-      # We don't need to persist stating in a resource shared between containers
-      # - staging:/home/airflow/staging
       - ./logs:/opt/airflow/logs
     # For testing on local mac. This is a good reason for not
     # using files, but a service. Note this folder has to match test_access_permissions.py
       - /mnt/Archive0/00/TestArchivePermissions:/home/airflow/extern/Archive0/00/TestArchivePermissions
-# For testing only put this back      - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
+    #  - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
       - ${ARCH_ROOT:-/mnt}/Archive1:/home/airflow/extern/Archive1
       - ${ARCH_ROOT:-/mnt}/Archive2:/home/airflow/extern/Archive2
       - ${ARCH_ROOT:-/mnt}/Archive3:/home/airflow/extern/Archive3
-# This is for pyCharm development only.
-# DEBUG:
+      # This allows us to dynamically add or modify dags without restarting the scheduler
       - ./dags:/opt/airflow/dags
     environment: *airflow_environment
     command: scheduler
