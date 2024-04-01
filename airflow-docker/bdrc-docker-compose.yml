@@ -1,0 +1,117 @@
+# For use with deploy
+
+version: '3.7'
+
+# ====================================== AIRFLOW ENVIRONMENT VARIABLES =======================================
+x-environment: &airflow_environment
+  - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+  - AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS=False
+  - AIRFLOW__CORE__LOAD_EXAMPLES=False
+  - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql://airflow:airflow@postgres:5432/airflow
+  - AIRFLOW__CORE__STORE_DAG_CODE=True
+  - AIRFLOW__CORE__STORE_SERIALIZED_DAGS=True
+  - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+
+# x-airflow-image: &airflow_image apache/airflow:2.0.0-python3.8
+# jimk - lets get frisky
+# See ./Dockerfile-bdrc
+# x-airflow-image: &airflow_image ${COMPOSE_AIRFLOW_IMAGE}
+x-airflow-image: &airflow_image bdrc-airflow
+#
+# Bit of a bust
+#x-pycharm-helper: &pycharm_helper pycharm_helpers:PY-233.11799.298
+##x-pycharm-env: &pycharm_env
+##  - PYCHARM_DEBUG=True
+##  - PYCHARM_DEBUG_PORT=12345
+##  - PYCHARM_DEBUG_HOST=host.docker.internal
+##  -
+x-dbrc-log: &bdrc_log qa
+# ====================================== /AIRFLOW ENVIRONMENT VARIABLES ======================================
+services:
+  any-name:
+    build:
+      context: ${COMPOSE_BUILD_DIR}
+      dockerfile: ${COMPOSE_BDRC_AIRFLOW_DOCKERFILE:-Dockerfile-bdrc}
+      args:
+        SYNC_SCRIPTS_HOME: ${BIN}
+        PY_REQS: ${COMPOSE_PY_REQS}
+    image: *airflow_image
+
+  postgres:
+    image: postgres:12-alpine
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    ports:
+      - "5432:5432"
+
+  init:
+    image: *airflow_image
+    depends_on:
+      - postgres
+    environment: *airflow_environment
+    entrypoint: /bin/bash
+    command: -c 'airflow db init && airflow users create --username admin --password admin --firstname Anonymous --lastname Admin --role Admin --email admin@example.org'
+
+  webserver:
+    image: *airflow_image
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - "8089:8080"
+    volumes:
+      - ./logs:/opt/airflow/logs
+      # DEV/TEST use bind mounts
+      # Debian prb: two services on the same /opt/airflow logs? webserver says it can't write. I only care scheduler
+      # Could it be that both webserver and scheduler need this?
+      # Or neither?
+      # - /home/jimk/dev/tmp/Projects/airflow/log:/opt/airflow/logs
+      #all of a sudden, I need to do this under Debian ?
+      # No, in fact it breaks things
+      # - /home/jimk/dev/ao-workflows/StagingGlacierProcess:/opt/airflow/dags
+
+    environment: *airflow_environment
+    command: webserver
+
+  scheduler:
+    image: *airflow_image
+    user: ${SYNC_ACCESS_UID}
+    restart: always
+    depends_on:
+      - postgres
+    volumes:
+      - ./logs:/opt/airflow/logs
+    # For testing on local mac. This is a good reason for not
+    # using files, but a service. Note this folder has to match test_access_permissions.py
+      - /mnt/Archive0/00/TestArchivePermissions:/home/airflow/extern/Archive0/00/TestArchivePermissions
+    #  - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
+      - ${ARCH_ROOT:-/mnt}/Archive1:/home/airflow/extern/Archive1
+      - ${ARCH_ROOT:-/mnt}/Archive2:/home/airflow/extern/Archive2
+      - ${ARCH_ROOT:-/mnt}/Archive3:/home/airflow/extern/Archive3
+      # This allows us to dynamically add or modify dags without restarting the scheduler
+      - ./dags:/opt/airflow/dags
+    environment: *airflow_environment
+    command: scheduler
+
+    secrets:
+      - db_apps
+      - drs_cnf
+      - aws
+
+secrets:
+  db_apps:
+    file:
+      ${SECRETS}/db_apps.config
+  drs_cnf:
+    file:
+      ${SECRETS}/drs.config
+  aws:
+    file:
+      ${SECRETS}/aws-credentials
+
+# volumes:
+#   staging:
+#    logs:
+    

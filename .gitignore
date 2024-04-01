@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# secrets
+**/.secrets/**
+airflow-docker/bin/
+.secrets/
