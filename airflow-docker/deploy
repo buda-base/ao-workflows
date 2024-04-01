@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+#
+#
+# Create a deployment directory for the airflow docker compose service
+
+#
+# also cobbled from bdrc-docker.sh
+# Create a test environment directory structure
+# Args: path to parent.
+# Result: Parent/Archive0/00-24
+#               /Archive1/25-49
+#               /Archive2/50-74
+#               /Archive1/75-99
+
+set -e
+export ME=$(basename $0)
+. ~/bin/init_sys.sh
+
+function usage() {
+  echo "Usage: ${ME} [-h|--help] -s|--source <source-dir> -d|--dest <deploy-dir> [-i|--init-env <deploy-dir>]"
+  echo "Create and deployment directory for the airflow docker compose service"
+  echo "  -h|--help"
+  echo "  -s|--source <source-dir>: source directory"
+  echo "  -d|--dest <deploy-dir>: deployment directory"
+  echo "  -i|--init-env <deploy-dir>: initialize test environment"
+  echo ""
+  echo "the -i|--init-env is used standalone to build a local copy of the RS archive for testing."
+  echo "You need to manually reference its output in the bdrc-docker-compose.yaml scheduler:volumes:"
+}
+init_test_env() {
+  for d in $(seq 0 99); do
+    todo=${1}/Archive$(($d / 25))/$(printf "%02d" $d)
+    mkdir -p $todo || exit 1
+    chmod -R 777 $todo
+  done
+}
+
+OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env -- "$@")
+
+while true; do # Parse command line options
+  case "$1" in
+  -s | --source)
+    export SRC=$2
+    shift 2
+    ;;
+  -d | --dest)
+    export DEPLOY=$2
+    shift 2
+    ;;
+  -i | --init-env)
+    init_test_env $2
+    exit $?
+    ;;
+  -h | --help)
+    usage
+    exit 1
+    ;;
+
+  --)
+    shift
+    break
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+
+if [[ -z $SRC ]] || [[ -z $DEPLOY ]]; then
+  echo no args. bye
+  exit 1
+fi
+
+if [[ ! -d $DEPLOY ]]; then
+  mkdir $DEPLOY
+  for DD in $DEPLOY/dags $DEPLOY/logs $DEPLOY/config $DEPLOY/plugins; do
+    mkdir -p $DD
+    chmod 777 $DD
+  done
+fi
+
+cp $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
+cp -r $SRC/dags ${DEPLOY}
+
+# Borrowed from bdrc-docker.sh
+export SECRETS=$DEPLOY/.docker-secrets
+mkdir -p "${SECRETS}"
+cp -v ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
+./extract-section.pl ~/.aws/credentials default >${SECRETS}/aws-credentials || exit 1
+# chmod u-w "${SECRETS}"
+
+cat <<EOF >$DEPLOY/.env
+SECRETS=.docker-secrets
+# hush run-time warnings of build environments
+COMPOSE_PY_REQS=
+BIN=
+COMPOSE_BUILD_DIR=.
+# Comment ARCH_ROOT in production, to use the default /mnt in bdrc-docker-compose
+ARCH_ROOT=.
+# Allows RW access to RS Archives
+SYNC_ACCESS_UID=1001
+EOF
+
+# They say this is a BUILD image arg, not a runtime arg
+# AIRFLOW_UID=1000
+# AIRFLOW_GID=0
+
+log_echo "Deployment directory created: $DEPLOY"
+log_echo "manage  the services with: cd $DEPLOY && docker compose [up -d | down | log | exec....."
