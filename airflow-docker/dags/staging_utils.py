@@ -2,10 +2,12 @@
 """
 Utilities for glacier staging
 """
-
+import pprint
+import sys
 from pathlib import Path
 import configparser
 import boto3
+
 
 def create_session(creds_section_name: str = 'default') -> boto3.Session:
     """
@@ -32,6 +34,7 @@ def create_session(creds_section_name: str = 'default') -> boto3.Session:
                              aws_secret_access_key=creds_section['aws_secret_access_key'],
                              region_name=creds_section['region_name'])
     return ases
+
 
 # TODO: Left off here, change this to creating a connection (See ao-workflows!14 comment)
 def create_aws_conn(creds_section_name: str = 'default') -> boto3.Session:
@@ -62,10 +65,13 @@ def create_aws_conn(creds_section_name: str = 'default') -> boto3.Session:
     return ases
 
 
-
 def get_aws_credentials(cred_file: Path, section: str = 'default') -> {}:
     """
     Get AWS credentials from a file
+    :param cred_file: Path to an ini file thatr configparser can read
+    :param section: Section to read
+    :type section: object
+    :type cred_file: pathlib.Path
     """
 
     # DEBUG:
@@ -77,8 +83,13 @@ def get_aws_credentials(cred_file: Path, section: str = 'default') -> {}:
     print(f"{section=}   {_configParser.sections()}")
     return _configParser[section]
 
+
 # DEBUG: Local
-# if __name__ == '__main__':
-#     sqs = create_session('default').client('s3')
-#     print(sqs.list_buckets())
-    # get_aws_credentials(Path('/Users/jimk/dev/ao-workflows/airflow-docker/.secrets/aws-credentials'), 'default')
+if __name__ == '__main__':
+    #     sqs = create_session('default').client('s3')
+    #     print(sqs.list_buckets())
+    path_to_credentials = Path(sys.argv[1])
+    section = sys.argv[2] if len(sys.argv) > 2 else 'default'
+    o_section = get_aws_credentials(path_to_credentials, section)
+    for x in o_section.keys():
+        pprint.pprint(f"{section}[{x}]={o_section[x]}")
