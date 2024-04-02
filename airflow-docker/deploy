@@ -16,6 +16,13 @@ set -e
 export ME=$(basename $0)
 . ~/bin/init_sys.sh
 
+#region CONST
+# Allows RW access to RS Archives
+# prod:
+_PRODSYNC_ACCESS_UID=1001
+_DEV_SYNC_ACCESS_UID=5000
+
+#endregion
 function usage() {
   echo "Usage: ${ME} [-h|--help] -s|--source <source-dir> -d|--dest <deploy-dir> [-i|--init-env <deploy-dir>]"
   echo "Create and deployment directory for the airflow docker compose service"
@@ -40,14 +47,15 @@ OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env -- "$@")
 while true; do # Parse command line options
   case "$1" in
   -s | --source)
-    export SRC=$2
+    export SRC=${2?"No source directory given."}
     shift 2
     ;;
   -d | --dest)
-    export DEPLOY=$2
+    export DEPLOY=${2?"No deployment directory given."}
     shift 2
     ;;
   -i | --init-env)
+    init_home=${2?"No archival parent directory given."}
     init_test_env $2
     exit $?
     ;;
@@ -79,6 +87,7 @@ if [[ ! -d $DEPLOY ]]; then
   done
 fi
 
+
 cp $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
 cp -r $SRC/dags ${DEPLOY}
 
@@ -89,16 +98,17 @@ cp -v ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
 ./extract-section.pl ~/.aws/credentials default >${SECRETS}/aws-credentials || exit 1
 # chmod u-w "${SECRETS}"
 
+
 cat <<EOF >$DEPLOY/.env
 SECRETS=.docker-secrets
 # hush run-time warnings of build environments
 COMPOSE_PY_REQS=
 BIN=
-COMPOSE_BUILD_DIR=.
+COMPOSE_BUILD_DIR=
 # Comment ARCH_ROOT in production, to use the default /mnt in bdrc-docker-compose
 ARCH_ROOT=.
-# Allows RW access to RS Archives
-SYNC_ACCESS_UID=1001
+
+SYNC_ACCESS_UID=$_DEV_SYNC_ACCESS_UID
 EOF
 
 # They say this is a BUILD image arg, not a runtime arg

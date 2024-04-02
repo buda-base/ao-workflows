@@ -65,6 +65,9 @@ from airflow.operators.bash import BashOperator
 from airflow import DAG
 from airflow.decorators import task
 from datetime import timedelta
+
+from airflow.operators.python import PythonOperator
+from airflow.providers.amazon.aws.sensors.sqs import SqsSensor
 from bdrc_bag import bag_ops
 from util_lib.version import bdrc_util_version
 from archive_ops.api import get_archive_location
@@ -234,12 +237,12 @@ def build_sync_env(execution_date) -> dict:
 # ----------------------   airflow task declarations  -------------------------
 
 @task
-def get_restored_object_messages():
+def get_restored_object_messages_untasked():
     """
     Pull a message from SQS
     :return:
     """
-    return mock_message
+    # return mock_message
     import boto3
 
     # read from an SQS Queue
@@ -296,8 +299,8 @@ def get_restored_object_messages():
     return s3_records
 
 
-@task
-def download_from_messages(s3_records) -> [str]:
+# @task
+def download_messages_untasked(**context) -> [str]:
     """
 
     :param s3_records: object restored format
@@ -305,6 +308,8 @@ def download_from_messages(s3_records) -> [str]:
     :return: Nothing
     """
     import boto3
+
+    s3_records = context["ti"].xcom_pull(task_ids="sqs_sensor_task")
 
     downloaded_paths: [] = []
     from botocore.exceptions import ClientError
@@ -373,37 +378,37 @@ def sync_debagged(downloads: [str], **context):
         ).execute(context)
 
 
-with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
+with DAG('sqs_xcom_dag', schedule=None, tags=['bdrc']) as gs_dag:
     # smoke test
     # notify = BashOperator(
     #     task_id="notify",
     #     bash_command='echo "HOWDY! There are now $(ls /tmp/images/ | wc -l) images."')
 
-    msgs = get_restored_object_messages()
-    downloads = download_from_messages(msgs)
-    to_sync = debag_downloads(downloads)
-    syncd = sync_debagged(to_sync)
+    # msgs = get_restored_object_messages()
+    # downloads = download_from_messages(msgs)
+    # to_sync = debag_downloads(downloads)
+    # syncd = sync_debagged(to_sync)
 
     #
     # POS: can't get output
-    # sqs_sensor = SqsSensor(
-    #     task_id='sqs_sensor_task',
-    #     #     dag=dag,
-    #     sqs_queue=UNGLACIERED_QUEUE_NAME,
-    #     # Lets use default,
-    #     # TODO: setup aws_conn_id='my_aws_conn',
-    #     max_messages=10,
-    #     wait_time_seconds=10,
-    #     do_xcom_push=False
-    # )
+    sqs_sensor = SqsSensor(
+        task_id='sqs_sensor_task',
+        #     dag=dag,
+        sqs_queue=UNGLACIERED_QUEUE_NAME,
+        # Lets use default,
+        # TODO: setup aws_conn_id='my_aws_conn',
+        max_messages=1,
+        wait_time_seconds=10,
+        do_xcom_push=True
+    )
 
-    # pm = PythonOperator(
-    #     task_id='process_messages',
-    #     python_callable=process_messages,
-    #     dag=gs_dag
-    # )
+    pm = PythonOperator(
+        task_id='process_messages',
+        python_callable=download_messages_untasked,
+        dag=gs_dag
+    )
     #
-    # sqs_sensor >> pm
+    sqs_sensor >> pm
 
 
 # sqs_sensor >> process_task

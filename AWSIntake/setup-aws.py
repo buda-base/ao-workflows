@@ -14,8 +14,9 @@ import boto3
 # Interested events - used by SQS and the permissions granter
 # Take 2 - there's a lot going on in a bucket, all I want is the restores
 event_list: [] = [
-                  's3:ObjectRestore:*'
-                  ]
+    's3:ObjectRestore:Completed',
+    's3:ObjectCreated:*',
+]
 
 
 def create_sqs_queue(queue_name, sqs: boto3.client = boto3.client('sqs')) -> str:
@@ -130,17 +131,19 @@ def queue_url_to_arn(queue_url: str, sqs: boto3.client = boto3.client('sqs')) ->
 
 if __name__ == "__main__":
     # Specify your AWS S3 bucket name and SQS queue name
-    bucket_name = 'manifest.bdrc.org'
-    queue_name = 'ManifestReadyToIntake'
+    # bucket_name = 'manifest.bdrc.org'
+    # queue_name = 'ManifestReadyToIntake'
+    bucket_name = 'glacier.staging.nlm.bdrc.org'
+    queue_name = 'NLMReadyToIntake'
 
-    g_s3: boto3.client = boto3.client('s3')
-    g_sqs: boto3.client = boto3.client('sqs')
+    g_s3: boto3.client = boto3.client('s3', region_name='ap-northeast-2')
+    g_sqs: boto3.client = boto3.client('sqs', region_name='ap-northeast-2')
     # Create an SQS queue
     intake_notification_queue_url: str = create_sqs_queue(queue_name, g_sqs)
 
     # Grant S3 permissions to send events to the SQS queue
     grant_s3_permissions_to_sqs_queue(bucket_name, intake_notification_queue_url, g_sqs)
 
-    intake_notification_queue_arn = queue_url_to_arn( intake_notification_queue_url, g_sqs)
+    intake_notification_queue_arn = queue_url_to_arn(intake_notification_queue_url, g_sqs)
     # Create an S3 bucket event notification
-    create_s3_event_notification(bucket_name, intake_notification_queue_arn , g_s3)
+    create_s3_event_notification(bucket_name, intake_notification_queue_arn, g_s3)
