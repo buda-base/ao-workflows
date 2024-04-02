@@ -53,6 +53,7 @@ def create_aws_conn(creds_section_name: str = 'default') -> boto3.Session:
     else:
         print('using secrets')
         # See ../airflow-docker/docker-compose.yml
+        # and ../airflow-docker/deploy (which creates the secrets file
         #        creds_section = get_aws_credentials(Path('/run/secrets/aws'), creds_section_name)
         creds_section = get_aws_credentials(ppfx / "aws", creds_section_name)
         ases = boto3.Session(aws_access_key_id=creds_section['aws_access_key_id'],
@@ -75,7 +76,6 @@ def get_aws_credentials(cred_file: Path, section: str = 'default') -> {}:
     _configParser.read(cred_file)
     print(f"{section=}   {_configParser.sections()}")
     return _configParser[section]
-# ------- END TO DO: extract into staging_utils.py when stable
 
 # DEBUG: Local
 # if __name__ == '__main__':
