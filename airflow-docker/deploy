@@ -95,7 +95,9 @@ cp -r $SRC/dags ${DEPLOY}
 export SECRETS=$DEPLOY/.docker-secrets
 mkdir -p "${SECRETS}"
 cp -v ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
-./extract-section.pl ~/.aws/credentials default >${SECRETS}/aws-credentials || exit 1
+./extract-section.pl ~/.aws/credentials default > ${SECRETS}/aws-credentials || exit 1
+# jimk archive-ops-14 - support other regions
+./extract-section.pl ~/.aws/credentials ap_northeast >> ${SECRETS}/aws-credentials || exit 1
 # chmod u-w "${SECRETS}"
 
 
