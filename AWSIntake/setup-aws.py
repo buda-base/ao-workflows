@@ -7,7 +7,9 @@ Only needs run once for each queue. But is safe to run again with modified value
 REM that these json policies are the **only** ones stored, so deleting an element in them
 will cause that element to be deleted in the bucket/SQS config.
 """
+import collections
 import json
+from pprint import pp
 
 import boto3
 
@@ -33,7 +35,7 @@ def create_sqs_queue(queue_name, sqs: boto3.client = boto3.client('sqs')) -> str
     # Get the SQS queue URL
     queue_url = response['QueueUrl']
 
-    print(f"SQS queue '{queue_name}' created with URL: {queue_url}")
+    pp(f"SQS queue '{queue_name}' created with URL: {queue_url}")
     return queue_url
 
 
@@ -65,7 +67,7 @@ def create_s3_event_notification(tracked_bucket_name: str,
         NotificationConfiguration=event_notification_config
     )
 
-    print(f"S3 bucket event notification for '{tracked_bucket_name}' created with SQS queue ARN: {queue_arn}")
+    pp(f"S3 bucket event notification for '{tracked_bucket_name}' created with SQS queue ARN: {queue_arn}")
 
 
 import boto3
@@ -113,7 +115,7 @@ def grant_s3_permissions_to_sqs_queue(watched_bucket_name: str,
         }
     )
 
-    print(f"Permissions granted for S3 bucket '{watched_bucket_name}' to send events to SQS queue '{queue_url}'")
+    pp(f"Permissions granted for S3 bucket '{watched_bucket_name}' to send events to SQS queue '{queue_url}'")
 
 
 def queue_url_to_arn(queue_url: str, sqs: boto3.client = boto3.client('sqs')) -> str:
@@ -131,19 +133,31 @@ def queue_url_to_arn(queue_url: str, sqs: boto3.client = boto3.client('sqs')) ->
 
 if __name__ == "__main__":
     # Specify your AWS S3 bucket name and SQS queue name
+    # Run 1 test local
     # bucket_name = 'manifest.bdrc.org'
     # queue_name = 'ManifestReadyToIntake'
-    bucket_name = 'glacier.staging.nlm.bdrc.org'
-    queue_name = 'NLMReadyToIntake'
+    # Run 2 NLM
+    # bucket_name = 'glacier.staging.nlm.bdrc.org'
+    # queue_name = 'NLMReadyToIntake'
+    # Run 3 FPL
+    bucket_name = 'glacier.staging.fpl.bdrc.org'
+    queue_name = 'FPLReadyToIntake'
 
-    g_s3: boto3.client = boto3.client('s3', region_name='ap-northeast-2')
-    g_sqs: boto3.client = boto3.client('sqs', region_name='ap-northeast-2')
-    # Create an SQS queue
-    intake_notification_queue_url: str = create_sqs_queue(queue_name, g_sqs)
+    resource_map = collections.namedtuple('resource_map', ['region_name','bucket_name', 'queue_name'])
 
-    # Grant S3 permissions to send events to the SQS queue
-    grant_s3_permissions_to_sqs_queue(bucket_name, intake_notification_queue_url, g_sqs)
+    todo_list = [resource_map('ap-northeast-2', 'glacier.staging.nlm.bdrc.org', 'NlmReadyToIntake'),
+                 resource_map('ap-northeast-2', 'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake'),
+                 resource_map('us-east-1', 'manifest.bdrc.org', 'ManifestReadyToIntake')]
 
-    intake_notification_queue_arn = queue_url_to_arn(intake_notification_queue_url, g_sqs)
-    # Create an S3 bucket event notification
-    create_s3_event_notification(bucket_name, intake_notification_queue_arn, g_s3)
+    for resource in todo_list:
+        g_s3: boto3.client = boto3.client('s3', region_name=resource.region_name)
+        g_sqs: boto3.client = boto3.client('sqs', region_name=resource.region_name)
+        # Create an SQS queue
+        intake_notification_queue_url: str = create_sqs_queue(resource.queue_name, g_sqs)
+
+        # Grant S3 permissions to send events to the SQS queue
+        grant_s3_permissions_to_sqs_queue(resource.bucket_name, intake_notification_queue_url, g_sqs)
+
+        intake_notification_queue_arn = queue_url_to_arn(intake_notification_queue_url, g_sqs)
+        # Create an S3 bucket event notification
+        create_s3_event_notification(resource.bucket_name, intake_notification_queue_arn, g_s3)

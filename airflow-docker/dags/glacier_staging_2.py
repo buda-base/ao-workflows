@@ -54,9 +54,10 @@ We expect to get, in Response['Messages][0]['Body']['Records'] a set if dicts,
 }
 ```
 """
-
+import collections
 import json
 import os
+from pprint import pp
 from pathlib import Path
 import platform
 
@@ -65,16 +66,26 @@ from airflow.operators.bash import BashOperator
 from airflow import DAG
 from airflow.decorators import task
 from datetime import timedelta
-
-from airflow.operators.python import PythonOperator
-from airflow.providers.amazon.aws.sensors.sqs import SqsSensor
 from bdrc_bag import bag_ops
 from util_lib.version import bdrc_util_version
 from archive_ops.api import get_archive_location
 
 from staging_utils import create_session
 
+# create a named tuple
 
+Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 'queue_name', 'config_section_name'])
+
+# See AWSIntake.setup-aws.py for the queue names
+# See 'deploy' for the config section names
+download_map: [Download_Map] = [
+    Download_Map('ap-northeast-2',  'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake', 'ap_northeast'),
+    Download_Map('ap-northeast-2', 'glacier.staging.nlm.bdrc.org', 'NlmReadyToIntake', 'ap_northeast'),
+    Download_Map('us-east-1', 'manifest.bdrc.org',  'ManifestReadyToIntake', 'default')
+    ]
+# Region, SQS client
+
+regional_queue_buckets: [()]
 UNGLACIERED_QUEUE_NAME: str = 'ManifestReadyToIntake'
 
 # For determining some file sys roots
@@ -85,8 +96,10 @@ PROD_TIME_DELTA: timedelta = timedelta(hours=1)
 
 # DEBUG:
 MY_TIME_DELTA = DEV_TIME_DELTA
-REQUESTED_EVENTS = ['ObjectRestore:Completed', 'ObjectCreated:Put']
+REQUESTED_AWS_EVENTS: [str] = ['ObjectRestore:Completed', 'ObjectCreated:*']
 
+# our buckets and SQS queues are in these sections of the config
+REQUESTED_AWS_SECTIONS: [str] = ['default', 'ap_northeast']
 #
 # Use an environment variable to set the base path
 # See docker-compose.yml for the roots/home/a
@@ -101,7 +114,6 @@ os.makedirs(STAGING_PATH, exist_ok=True)
 # See docker-compose.yml for the location of the system logs. Should be a bind mount
 # mount point
 APP_LOG_ROOT = Path.home() / "bdrc" / "log"
-
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
 DEST_PATH = Path.home() / "extern" / "Archive"
@@ -171,6 +183,22 @@ mock_message: [] = [
 
 #  ----------------------   utils  -------------------------
 
+def create_sessions(dm: [Download_Map]) -> {}:
+    """
+    create sessions dictionary keyed by region, for each distinct config entry
+    in the download map
+    Sessions are used by clients ('s3' and 'sqs')
+    :return:
+    """
+    # set de-duplicates
+    out_sessions: {} = {}
+    for dmentry in dm:
+        if dmentry.region_name not in out_sessions:
+            out_sessions[dmentry.region_name] = create_session(dmentry.config_section_name)
+
+    pp(out_sessions)
+    return out_sessions
+
 
 def build_sync_env(execution_date) -> dict:
     """
@@ -237,70 +265,87 @@ def build_sync_env(execution_date) -> dict:
 # ----------------------   airflow task declarations  -------------------------
 
 @task
-def get_restored_object_messages_untasked():
+def get_restored_object_messages():
     """
     Pull a message from SQS
     :return:
     """
+    # DEBUG
     # return mock_message
-    import boto3
 
-    # read from an SQS Queue
-    # Create an SQS session
-
-    sqs = create_session().client('sqs')
-
-    # URL of your SQS queue
-    queue_url = 'https://sqs.us-east-1.amazonaws.com/170602929106/ManifestReadyToIntake'
-
-    print(f"Going in to {queue_url}")
-    # Receive message from SQS queue
-    response = sqs.receive_message(
-        wait_time_seconds=1,
-        queue_url=queue_url,
-        number_messages=1,
-        visibility_timeout=10
-
-        # QueueUrl=queue_url,
-        # AttributeNames=['All'],
-        # MaxNumberOfMessages=5,
-        # VisibilityTimeout=10  # hide it from other consumers for 10 seconds
-        #        WaitTimeSeconds=5,
-    )
-
-    print(f"Received {response}")
-
+    # output buffer
     s3_records = []
 
-    if 'Messages' in response:
+    # read from an SQS Queue
+    # map of sessions, keyed by region
+    session_dict: {} = create_sessions(download_map)
 
-        # We could receive a number of messages. Since we only process the ones that contain a certain record
-        # type (REQUESTED_EVENTS)) It is required that each message ONLY contain the REQUESTED_EVENTS, because
-        # we delete it if any of its records contain one of those events.
-        for message in response['Messages']:
-            print('Received message: {0}'.format(message['Body']))
-            message = response['Messages'][0]
-            records: [] = json.loads(message['Body'])['Records']
+    for dmentry in download_map:
+        region_name: str = dmentry.region_name
+        sqs = session_dict[region_name].client('sqs')
 
-            msg_s3_records = [x for x in records if x.get("eventName") in REQUESTED_EVENTS]
-            if msg_s3_records:
-                s3_records.extend(msg_s3_records)
-                receipt_handle = message['ReceiptHandle']
-                # Now delete the message
-                # sqs.delete_message(
-                #    QueueUrl=queue_url,
-                #    ReceiptHandle=receipt_handle
-                # )
-                print('Message not deleted - in DEBUG')
-        else:
-            print('No messages to receive')
+        queue_url = f"https://sqs.{region_name}.amazonaws.com/170602929106/{dmentry.queue_name}"
+        pp(f"Polling  {queue_url}")
+        # Receive message from SQS queue
+        response = sqs.receive_message(
+            # wait_time_seconds=1,
+            # queue_url=queue_url,
+            # number_messages=1,
+            # visibility_timeout=10
+
+            QueueUrl=queue_url,
+            AttributeNames=['All'],
+            MaxNumberOfMessages=1,
+            VisibilityTimeout=10,  # hide it from other consumers for 10 seconds
+            WaitTimeSeconds=1
+        )
+
+        pp(f"Received {response}")
+
+        if 'Messages' in response:
+
+            # We could receive a number of messages. Since we only process the ones that contain a certain record
+            # type (REQUESTED_EVENTS)) It is required that each message ONLY contain the REQUESTED_EVENTS, because
+            # we delete it if any of its records contain one of those events.
+            for each_message in response['Messages']:
+                receipt_handle = each_message['ReceiptHandle']
+                print("Message:")
+                pp(each_message['Body'], indent=4, width=80, depth=None, compact=False, sort_dicts=True)
+                message = response['Messages'][0]
+                message_body: [] = json.loads(message['Body'])
+                if 'Records' in message_body:
+                    records = message_body['Records']
+
+                    # TODO: ObjectCreated in request events is a wildcard. We have to modify to
+                    # do a "startswith"
+                    msg_s3_records = [x for x in records if x.get("eventName") in REQUESTED_AWS_EVENTS]
+                    if msg_s3_records:
+                        s3_records.extend(msg_s3_records)
+
+                        pp('Message not deleted - in DEBUG')
+                else:
+
+                    # Delete test event records
+                    if message_body.get('Event',"") == 's3:TestEvent':
+                        pp('Test Event')
+                        # Now delete the message
+                        sqs.delete_message(
+                           QueueUrl=queue_url,
+                           ReceiptHandle=receipt_handle
+                        )
+
+
+                    pp('No records in message')
+
+            else:
+                pp('No messages to receive')
 
     # return mock_message
     return s3_records
 
 
-# @task
-def download_messages_untasked(**context) -> [str]:
+@task
+def download_from_messages(s3_records) -> [str]:
     """
 
     :param s3_records: object restored format
@@ -309,9 +354,11 @@ def download_messages_untasked(**context) -> [str]:
     """
     import boto3
 
-    s3_records = context["ti"].xcom_pull(task_ids="sqs_sensor_task")
-
     downloaded_paths: [] = []
+    #
+    # DEBUG
+    raise EnvironmentError("DEBUG:  Not downloading")
+
     from botocore.exceptions import ClientError
     for s3_record in s3_records:
         bucket: str = "unset"
@@ -327,17 +374,20 @@ def download_messages_untasked(**context) -> [str]:
             os.makedirs(download_full_path.parent, exist_ok=True)
 
             hash = s3_record['s3']['object']['eTag']
+
+            # TODO: make an s3 session for the region in the record - may have to
+            # backfit the region to the credentials.
             s3 = create_session('default').client('s3')
             s3.download_file(bucket, key, dfp_str)
 
-            print(f"Downloaded S3://{bucket}/{key} to {dfp_str}")
+            pp(f"Downloaded S3://{bucket}/{key} to {dfp_str}")
             downloaded_paths.append(str(download_full_path))
         except KeyError as e:
-            print(f'KeyError: {e}')
+            pp(f'KeyError: {e}')
         except ClientError as e:
-            print(f"Could not retrieve S3://{bucket}/{key}:  {e} ")
+            pp(f"Could not retrieve S3://{bucket}/{key}:  {e} ")
     else:
-        print('No messages')
+        pp('No messages')
 
     return downloaded_paths
 
@@ -378,40 +428,17 @@ def sync_debagged(downloads: [str], **context):
         ).execute(context)
 
 
-with DAG('sqs_xcom_dag', schedule=None, tags=['bdrc']) as gs_dag:
+with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
     # smoke test
     # notify = BashOperator(
     #     task_id="notify",
     #     bash_command='echo "HOWDY! There are now $(ls /tmp/images/ | wc -l) images."')
 
-    # msgs = get_restored_object_messages()
-    # downloads = download_from_messages(msgs)
-    # to_sync = debag_downloads(downloads)
-    # syncd = sync_debagged(to_sync)
+    msgs = get_restored_object_messages()
+    downloads = download_from_messages(msgs)
+    to_sync = debag_downloads(downloads)
+    syncd = sync_debagged(to_sync)
 
-    #
-    # POS: can't get output
-    sqs_sensor = SqsSensor(
-        task_id='sqs_sensor_task',
-        #     dag=dag,
-        sqs_queue=UNGLACIERED_QUEUE_NAME,
-        # Lets use default,
-        # TODO: setup aws_conn_id='my_aws_conn',
-        max_messages=1,
-        wait_time_seconds=10,
-        do_xcom_push=True
-    )
-
-    pm = PythonOperator(
-        task_id='process_messages',
-        python_callable=download_messages_untasked,
-        dag=gs_dag
-    )
-    #
-    sqs_sensor >> pm
-
-
-# sqs_sensor >> process_task
 if __name__ == '__main__':
-    #    gs_dag.test()
-    gs_dag.cli()
+    gs_dag.test()
+    # gs_dag.cli()
