@@ -22,7 +22,7 @@ ff = [{ 'item': x, 'mismatches' :item_mism[x]} for x in mism_derived]
 # item_mism is
 # {'item': 'bdrc-W1FEMC032584', 'mismatches': {'items not in bdrc-khmermanuscripts that should be:'}}
 
-with open(Path(Path.home(), "dev", "ao-workflows","data", "mismatches.txt"), "w") as fout:
+with open(Path(Path.home(), "dev", "ao-workflows", "../data", "mismatches.txt"), "w") as fout:
     for mism in ff:
         fout.write(f"{mism['item']:19}")
         newl=''
