@@ -8,6 +8,40 @@ from pathlib import Path
 import configparser
 import boto3
 
+# iterate over a list of classes and return if any of them satisfies the match_class function
+def match_any_event_class(subject: str, event_classes: [str]) -> bool:
+    """
+    match_class for a list of classes
+    """
+    # Iterate over the list of classes
+    for class_ in event_classes:
+        # If the subject matches the class, return True
+        if match_class(subject, class_):
+            return True
+    return False
+
+def match_class(subject: str, class_: str) -> bool:
+    """
+    Test to see if a colon separated tuple is a member of a class,
+    defined by a colon separated tuple.
+    The second element of the class_ tuple is either a token or a wildcard character,
+    defined using the character *.
+    In this case, if the subject's first token matches the class' first token, the subject matches.
+    Otherwise, the whole second token must match
+    :param subject: colon separated tuple to test
+    :param class_: colon separated tuple - definition of possible matches
+    :return: True if the subject matches the class
+    """
+    # Split the subject and class into tokens
+    subject_tokens = subject.split(':')
+    class_tokens = class_.split(':')
+
+    # If the first token of the subject matches the first token of the class, the subject matches the class
+    return ((subject_tokens[0] == class_tokens[0])
+            and ( class_tokens[1] == '*'
+                  or subject_tokens[1] == class_tokens[1]))
+
+
 
 def create_session(creds_section_name: str) -> boto3.Session:
     """

@@ -70,7 +70,7 @@ from bdrc_bag import bag_ops
 from util_lib.version import bdrc_util_version
 from archive_ops.api import get_archive_location
 
-from staging_utils import create_session
+from staging_utils import *
 
 # create a named tuple
 
@@ -318,7 +318,7 @@ def get_restored_object_messages():
 
                     # TODO: ObjectCreated in request events is a wildcard. We have to modify to
                     # do a "startswith"
-                    msg_s3_records = [x for x in records if x.get("eventName") in REQUESTED_AWS_EVENTS]
+                    msg_s3_records = [x for x in records if match_any_event_class(x.get("eventName"), REQUESTED_AWS_EVENTS)]
                     if msg_s3_records:
                         s3_records.extend(msg_s3_records)
 
