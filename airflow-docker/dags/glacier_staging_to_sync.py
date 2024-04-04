@@ -97,7 +97,7 @@ DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
 PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
 
 # DEBUG:
-MY_TIME_DELTA = DEV_TIME_DELTA
+MY_TIME_DELTA = PROD_TIME_DELTA
 REQUESTED_AWS_EVENTS: [str] = ['ObjectRestore:Completed', 'ObjectCreated:*']
 
 # our buckets and SQS queues are in these sections of the config
@@ -473,9 +473,9 @@ def sync_debagged(downs: [str], **context):
 
 
 with DAG('sqs_manual_dag',
-         schedule=None,
-         # start_date=datetime(2024, 4, 4,16,49, tzinfo=local_tz()),
-         # end_date=datetime(2024, 4, 6, hour=23),
+         schedule=DEV_TIME_DELTA,
+         start_date=datetime(2024, 4, 4,23,32),
+         end_date=datetime(2024, 4, 6, hour=23),
          tags=['bdrc'],
          max_active_runs=4) as sync_dag:
     # smoke test
