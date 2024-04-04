@@ -3,9 +3,11 @@
 Creates a queue for notification on a bucket. Hardwired to manifest.bdrc.org and ManifestReadyToIntake
 Change bucket and queue values to match your needs in __main__
 
-Only needs run once for each queue. But is safe to run again with modified values.
+Only needs to run once for each queue. But is safe to run again with modified values.
 REM that these json policies are the **only** ones stored, so deleting an element in them
 will cause that element to be deleted in the bucket/SQS config.
+
+Similarly, modifying the queue by other means will have those changes overwritten by this script.
 """
 import collections
 import json
@@ -54,9 +56,19 @@ def create_s3_event_notification(tracked_bucket_name: str,
     event_notification_config = {
         'QueueConfigurations': [
             {
+                'Id': 'BagCreatedNotification',
                 'QueueArn': queue_arn,
-                'Events': event_list
-
+                'Events': event_list,
+                'Filter': {
+                    'Key': {
+                        'FilterRules': [
+                            {
+                                'Name': 'suffix',
+                                'Value': 'bag.zip'
+                            }
+                        ]
+                    }
+                }
             }
         ]
     }
@@ -143,7 +155,7 @@ if __name__ == "__main__":
     bucket_name = 'glacier.staging.fpl.bdrc.org'
     queue_name = 'FPLReadyToIntake'
 
-    resource_map = collections.namedtuple('resource_map', ['region_name','bucket_name', 'queue_name'])
+    resource_map = collections.namedtuple('resource_map', ['region_name', 'bucket_name', 'queue_name'])
 
     todo_list = [resource_map('ap-northeast-2', 'glacier.staging.nlm.bdrc.org', 'NlmReadyToIntake'),
                  resource_map('ap-northeast-2', 'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake'),
