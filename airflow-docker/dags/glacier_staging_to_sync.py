@@ -71,6 +71,11 @@ from staging_utils import *
 
 # create a named tuple
 
+# create a datetime.tzinfo for local time zone
+def local_tz():
+    import pytz
+    return pytz.timezone('America/New_York')
+
 Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 'queue_name', 'config_section_name'])
 
 # See AWSIntake.setup-aws.py for the queue names
@@ -240,6 +245,7 @@ def create_fetch_sessions(dm: [Download_Map]) -> {}:
 
 def build_sync_env(execution_date) -> dict:
     """
+    See sync_debagged task
        You have to emulate this stanza in bdrcSync.sh to set logging paths correctly
     # tool versions
     export logDipVersion=$(log_dip -v)
@@ -461,16 +467,17 @@ def sync_debagged(downs: [str], **context):
         # syncOneWork.sh [ -h ] [ -a archiveParent ] [ -w webParent ] [ -s successWorkList ] workPath
         airflow.operators.bash.BashOperator(
             task_id="sync_debag",
-            bash_command=f"syncOneWork.sh -a {str(DEST_PATH)}  -s $(mktemp) {download}",
+            bash_command=f"syncOneWork.sh -a {str(DEST_PATH)}  -s $(mktemp) {download} 2>&1 | tee $syncLogDateTimeFile",
             env=env
         ).execute(context)
 
 
 with DAG('sqs_manual_dag',
-         schedule=MY_TIME_DELTA,
-         start_date=datetime(2024, 4, 4),
-         end_date=datetime(2024, 4, 6),
-         tags=['bdrc']) as sync_dag:
+         schedule=None,
+         # start_date=datetime(2024, 4, 4,16,49, tzinfo=local_tz()),
+         # end_date=datetime(2024, 4, 6, hour=23),
+         tags=['bdrc'],
+         max_active_runs=4) as sync_dag:
     # smoke test
     # notify = BashOperator(
     #     task_id="notify",
