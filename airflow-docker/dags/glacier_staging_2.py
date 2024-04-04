@@ -479,7 +479,7 @@ def sync_debagged(downs: [str], **context):
         ).execute(context)
 
 
-with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
+with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as sync_dag:
     # smoke test
     # notify = BashOperator(
     #     task_id="notify",
@@ -492,5 +492,5 @@ with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
 
 if __name__ == '__main__':
     # noinspection PyArgumentList
-    gs_dag.test()
+    sync_dag.test()
     # gs_dag.cli()

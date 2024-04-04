@@ -81,7 +81,8 @@ fi
 
 if [[ ! -d $DEPLOY ]]; then
   mkdir $DEPLOY
-  for DD in $DEPLOY/dags $DEPLOY/logs $DEPLOY/config $DEPLOY/plugins; do
+  # jimk aow-14 - add sync logs
+  for DD in "$DEPLOY/dags" "$DEPLOY/logs" "$DEPLOY/config"" $DEPLOY/plugins" "$DEPLOY/processing/logs" ; do
     mkdir -p $DD
     chmod 777 $DD
   done

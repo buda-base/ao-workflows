@@ -373,7 +373,7 @@ def sync_debagged(downloads: [str], **context):
         ).execute(context)
 
 
-with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
+with DAG('sqs_old_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
     # smoke test
     # notify = BashOperator(
     #     task_id="notify",
