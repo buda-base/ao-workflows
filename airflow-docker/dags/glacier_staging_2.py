@@ -479,7 +479,7 @@ def sync_debagged(downs: [str], **context):
         ).execute(context)
 
 
-with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as sync_dag:
+with DAG('sqs_manual_dag', schedule=PROD_TIME_DELTA, tags=['bdrc']) as sync_dag:
     # smoke test
     # notify = BashOperator(
     #     task_id="notify",
