@@ -19,7 +19,7 @@ export ME=$(basename $0)
 #region CONST
 # Allows RW access to RS Archives
 # prod:
-_PRODSYNC_ACCESS_UID=1001
+_PROD_SYNC_ACCESS_UID=1001
 _DEV_SYNC_ACCESS_UID=5000
 
 #endregion
@@ -87,22 +87,26 @@ if [[ ! -d $DEPLOY ]]; then
   done
 fi
 
-
+log_echo docker-compose
 cp $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
+log_echo dags
 cp -r $SRC/dags ${DEPLOY}
 
 # Borrowed from bdrc-docker.sh
 export SECRETS=$DEPLOY/.docker-secrets
 mkdir -p "${SECRETS}"
+log_echo secrets - bdrc
 cp -v ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
 #
 # These section names, 'default' and 'ap_northeast', are hard-coded in the dags/..py
+log_echo aws default
 ./extract-section.pl ~/.aws/credentials default > ${SECRETS}/aws-credentials || exit 1
 # jimk archive-ops-14 - support other regions
+log_echo aws-others
 ./extract-section.pl ~/.aws/credentials ap_northeast >> ${SECRETS}/aws-credentials || exit 1
 # chmod u-w "${SECRETS}"
 
-
+log_echo .env
 cat <<EOF >$DEPLOY/.env
 SECRETS=.docker-secrets
 # hush run-time warnings of build environments
@@ -112,7 +116,7 @@ COMPOSE_BUILD_DIR=
 # Comment ARCH_ROOT in production, to use the default /mnt in bdrc-docker-compose
 ARCH_ROOT=.
 
-SYNC_ACCESS_UID=$_DEV_SYNC_ACCESS_UID
+SYNC_ACCESS_UID=$_PROD_SYNC_ACCESS_UID
 EOF
 
 # They say this is a BUILD image arg, not a runtime arg
