@@ -29,7 +29,7 @@ function usage() {
   echo "  -h|--help"
   echo "  -s|--source <source-dir>: source directory"
   echo "  -d|--dest <deploy-dir>: deployment directory"
-  echo "  -i|--init-env <deploy-dir>: initialize test environment"
+  echo "  -i|--init-env <deploy-dir>: initialize test environment AFTER creating it with --s and --d"
   echo ""
   echo "the -i|--init-env is used standalone to build a local copy of the RS archive for testing."
   echo "You need to manually reference its output in the bdrc-docker-compose.yaml scheduler:volumes:"

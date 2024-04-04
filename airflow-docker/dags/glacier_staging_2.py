@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Creates and airflow DAG to process unglaciered bag files. The process is:
-- unbag
+- de-bag
 - (optionally) validate
 Sync to Archive, using `syncOneWork.sh` (must be installed on host)
-This initiates the DIP-pump workflow (see github://bdua-base/archive-ops/scripts/dip-pump
+This initiates the DIP-pump workflow (see github://buda-base/archive-ops/scripts/dip-pump
 
 Expected ObjectRestored message format:
 We expect to get, in Response['Messages][0]['Body']['Records'] a set if dicts,
-
+# noinspection SpellCheckingInspection
 ```
 {
     "eventVersion": "2.1",
@@ -58,17 +58,14 @@ import collections
 import json
 import os
 from pprint import pp
-from pathlib import Path
-import platform
 
-from airflow.operators.bash import BashOperator
+import airflow.operators.bash
 
 from airflow import DAG
 from airflow.decorators import task
 from datetime import timedelta
 from bdrc_bag import bag_ops
 from util_lib.version import bdrc_util_version
-from archive_ops.api import get_archive_location
 
 from staging_utils import *
 
@@ -79,10 +76,10 @@ Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 
 # See AWSIntake.setup-aws.py for the queue names
 # See 'deploy' for the config section names
 download_map: [Download_Map] = [
-    Download_Map('ap-northeast-2',  'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake', 'ap_northeast'),
+    Download_Map('ap-northeast-2', 'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake', 'ap_northeast'),
     Download_Map('ap-northeast-2', 'glacier.staging.nlm.bdrc.org', 'NlmReadyToIntake', 'ap_northeast'),
-    Download_Map('us-east-1', 'manifest.bdrc.org',  'ManifestReadyToIntake', 'default')
-    ]
+    Download_Map('us-east-1', 'manifest.bdrc.org', 'ManifestReadyToIntake', 'default')
+]
 # Region, SQS client
 
 regional_queue_buckets: [()]
@@ -111,12 +108,14 @@ STAGING_PATH = BASE_PATH / "work"
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 os.makedirs(STAGING_PATH, exist_ok=True)
 
-# See docker-compose.yml for the location of the system logs. Should be a bind mount
-# mount point
+# See docker-compose.yml for the location of the system logs. Should be a bind mount point
 APP_LOG_ROOT = Path.home() / "bdrc" / "log"
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
 DEST_PATH = Path.home() / "extern" / "Archive"
+# Non docker
+_DB_CONFIG: Path = Path.home() / ".config" / "bdrc" / "db_apps.config" if not Path.exists(
+    Path("/run/secrets/db_apps")) else Path("/run/secrets/db_apps")
 
 # select a level (used in syncing)
 prod_level: str = 'qa'  # 'prod' in production
@@ -183,7 +182,46 @@ mock_message: [] = [
 
 #  ----------------------   utils  -------------------------
 
-def create_sessions(dm: [Download_Map]) -> {}:
+# Take the given AWS region name and return the first section in download map that matches the region name
+def get_download_map_for_region(region_name: str) -> Download_Map:
+    """
+    Get the download map entry for the given region
+    :param region_name:
+    :return:
+    """
+    return next((dm for dm in download_map if dm.region_name == region_name), None)
+
+
+cached_sessions: {} = {}
+
+
+def get_cached_session(profile_name: str) -> boto3.Session:
+    """
+    Get a cached session for the given profile name. Exploits the
+    :param profile_name: key into cached sessions
+    :return:
+    """
+
+    # This way recommended by PyLine, so cs not referenced before assignment
+    # noinspection PyTypeChecker
+    cs: boto3.Session = cached_sessions.get(profile_name, None)
+
+    if not cs:
+        cs = create_session(profile_name)
+        cached_sessions[profile_name] = cs
+
+    return cs
+
+
+def close_cached_sessions():
+    """
+    Close all cached sessions (not necessary, actually, and clear the map
+    :return:
+    """
+    cached_sessions.clear()
+
+
+def create_fetch_sessions(dm: [Download_Map]) -> {}:
     """
     create sessions dictionary keyed by region, for each distinct config entry
     in the download map
@@ -231,8 +269,6 @@ def build_sync_env(execution_date) -> dict:
     # $(date +%F_%H.%M.%S)
     job_date_time: str = f"{job_date}_{job_time}"
 
-    current_mnt_root: str = "Volumes" if platform.system().lower() == DARWIN_PLATFORM else "mnt"
-
     # DEBUG: make local while testing
     # _root: Path = Path.home() / "dev" / "tmp" / "Projects" / "airflow" / "glacier_staging_to_sync" / "log"
     logDir: Path = APP_LOG_ROOT
@@ -243,10 +279,8 @@ def build_sync_env(execution_date) -> dict:
     os.makedirs(audit_log_home, exist_ok=True)
 
     return {
-        # "DB_CONFIG": f"{prod_level}:~/.config/bdrc/db_apps.config",
-        # docker_db_apps has to reference drs.cnf in /run/secrets
         "DEBUG_SYNC": "true",
-        "DB_CONFIG": f"{prod_level}:/run/secrets/db_apps",
+        "DB_CONFIG": f"{prod_level}:{str(_DB_CONFIG)}",
         "hostName": "airflow_platform",
         "userName": "airflow_platform_user",
         "logDipVersion": util_ver,
@@ -264,6 +298,7 @@ def build_sync_env(execution_date) -> dict:
 
 # ----------------------   airflow task declarations  -------------------------
 
+
 @task
 def get_restored_object_messages():
     """
@@ -275,72 +310,79 @@ def get_restored_object_messages():
 
     # output buffer
     s3_records = []
+    session_dict: {} = {}
 
     # read from an SQS Queue
     # map of sessions, keyed by region
-    session_dict: {} = create_sessions(download_map)
+    try:
+        session_dict = create_fetch_sessions(download_map)
 
-    for dmentry in download_map:
-        region_name: str = dmentry.region_name
-        sqs = session_dict[region_name].client('sqs')
+        for dm_entry in download_map:
+            region_name: str = dm_entry.region_name
+            sqs = session_dict[region_name].client('sqs')
 
-        queue_url = f"https://sqs.{region_name}.amazonaws.com/170602929106/{dmentry.queue_name}"
-        pp(f"Polling  {queue_url}")
-        # Receive message from SQS queue
-        response = sqs.receive_message(
-            # wait_time_seconds=1,
-            # queue_url=queue_url,
-            # number_messages=1,
-            # visibility_timeout=10
+            queue_url = f"https://sqs.{region_name}.amazonaws.com/170602929106/{dm_entry.queue_name}"
+            pp(f"Polling  {queue_url}")
+            # Receive message from SQS queue
+            response = sqs.receive_message(
+                # wait_time_seconds=1,
+                # queue_url=queue_url,
+                # number_messages=1,
+                # visibility_timeout=10
 
-            QueueUrl=queue_url,
-            AttributeNames=['All'],
-            MaxNumberOfMessages=1,
-            VisibilityTimeout=10,  # hide it from other consumers for 10 seconds
-            WaitTimeSeconds=1
-        )
+                QueueUrl=queue_url,
+                AttributeNames=['All'],
+                MaxNumberOfMessages=1,
+                VisibilityTimeout=10,  # hide it from other consumers for 10 seconds
+                WaitTimeSeconds=1
+            )
 
-        pp(f"Received {response}")
+            pp(f"Received {response}")
 
-        if 'Messages' in response:
+            if 'Messages' in response:
 
-            # We could receive a number of messages. Since we only process the ones that contain a certain record
-            # type (REQUESTED_EVENTS)) It is required that each message ONLY contain the REQUESTED_EVENTS, because
-            # we delete it if any of its records contain one of those events.
-            for each_message in response['Messages']:
-                receipt_handle = each_message['ReceiptHandle']
-                print("Message:")
-                pp(each_message['Body'], indent=4, width=80, depth=None, compact=False, sort_dicts=True)
-                message = response['Messages'][0]
-                message_body: [] = json.loads(message['Body'])
-                if 'Records' in message_body:
-                    records = message_body['Records']
+                # We could receive a number of messages. Since we only process the ones that contain a certain record
+                # type (REQUESTED_EVENTS) It is required that each message ONLY contain the REQUESTED_EVENTS, because
+                # we delete it if any of its records contain one of those events.
+                for each_message in response['Messages']:
+                    receipt_handle = each_message['ReceiptHandle']
+                    print("Message:")
+                    pp(each_message['Body'], indent=4, width=80, depth=None, compact=False, sort_dicts=True)
+                    message = response['Messages'][0]
+                    message_body: [] = json.loads(message['Body'])
+                    if 'Records' in message_body:
+                        records = message_body['Records']
 
-                    # TODO: ObjectCreated in request events is a wildcard. We have to modify to
-                    # do a "startswith"
-                    msg_s3_records = [x for x in records if match_any_event_class(x.get("eventName"), REQUESTED_AWS_EVENTS)]
-                    if msg_s3_records:
-                        s3_records.extend(msg_s3_records)
+                        # TODO: ObjectCreated in request events is a wildcard. We have to modify to
+                        # do a "startswith"
+                        msg_s3_records = [r for r in records if
+                                          match_any_event_class(r.get("eventName"), REQUESTED_AWS_EVENTS)]
+                        if msg_s3_records:
+                            s3_records.extend(msg_s3_records)
 
-                        pp('Message not deleted - in DEBUG')
+                            pp('Message not deleted - in DEBUG')
+                    else:
+
+                        # Delete test event records
+                        if message_body.get('Event', "") == 's3:TestEvent':
+                            pp('Test Event')
+                            # Now delete the message
+                            sqs.delete_message(
+                                QueueUrl=queue_url,
+                                ReceiptHandle=receipt_handle
+                            )
+
+                        pp('No records in message')
+
                 else:
-
-                    # Delete test event records
-                    if message_body.get('Event',"") == 's3:TestEvent':
-                        pp('Test Event')
-                        # Now delete the message
-                        sqs.delete_message(
-                           QueueUrl=queue_url,
-                           ReceiptHandle=receipt_handle
-                        )
-
-
-                    pp('No records in message')
-
-            else:
-                pp('No messages to receive')
-
+                    pp('No messages to receive')
+    finally:
+        pass
+        #     for session in session_dict.values():
+        #         session.close()
+    # DEBUG
     # return mock_message
+
     return s3_records
 
 
@@ -349,23 +391,24 @@ def download_from_messages(s3_records) -> [str]:
     """
 
     :param s3_records: object restored format
-    :param kwargs: context
     :return: Nothing
     """
-    import boto3
 
     downloaded_paths: [] = []
     #
     # DEBUG
-    raise EnvironmentError("DEBUG:  Not downloading")
+    # raise EnvironmentError("DEBUG:  Not downloading")
 
     from botocore.exceptions import ClientError
+
     for s3_record in s3_records:
         bucket: str = "unset"
         key: str = "unset"
         try:
+            awsRegion: str = s3_record['awsRegion']
             bucket = s3_record['s3']['bucket']['name']
             key = s3_record['s3']['object']['key']
+
             # DEBUG
             # key += "simulate_failureHack"
 
@@ -373,11 +416,12 @@ def download_from_messages(s3_records) -> [str]:
             dfp_str: str = str(download_full_path)
             os.makedirs(download_full_path.parent, exist_ok=True)
 
-            hash = s3_record['s3']['object']['eTag']
+            # maybe a use for this later
+            # hash = s3_record['s3']['object']['eTag']
 
             # TODO: make an s3 session for the region in the record - may have to
-            # backfit the region to the credentials.
-            s3 = create_session('default').client('s3')
+            # back fit the region to the credentials.
+            s3 = get_cached_session(get_download_map_for_region(awsRegion).config_section_name).client('s3')
             s3.download_file(bucket, key, dfp_str)
 
             pp(f"Downloaded S3://{bucket}/{key} to {dfp_str}")
@@ -393,35 +437,42 @@ def download_from_messages(s3_records) -> [str]:
 
 
 @task
-def debag_downloads(downloads: [str]) -> [str]:
+def debag_downloads(downs: [str]) -> [str]:
     """
     Debags each unload
-    :param downloads:
-    :param kwargs:
-    :return: list of unbagged work archives. path object is not serializable,
+    :param downs: list of downloaded files
+    :return: list of **path names** of  unbagged work archives. path object is not serializable,
     so returning strings
     """
     os.makedirs(STAGING_PATH, exist_ok=True)
     debagged: [Path] = []
-    for download in downloads:
-        debagged.extend([str(x) for x in bag_ops.debag(download, str(STAGING_PATH))])
+
+    # BUG  Not everything that gets here is a bag.
+    # Fixed: in bucket event notification configuration (see AWSIntake.setup-aws.py)
+    # BUG - can have multiple entries for same zip. Deduplicate
+
+    unique_downs = list(set(downs))
+
+    for down in unique_downs:
+        debagged.extend([str(d) for d in bag_ops.debag(down, str(STAGING_PATH))])
     return debagged
 
+# create a set from a list of strings
 
+#
 @task
-def sync_debagged(downloads: [str], **context):
+def sync_debagged(downs: [str], **context):
     """
     Syncs each debagged work
-    :param downloads:
+    :param downs:
     :param context: airflow context
-    :return: None. this os tje terminal task
     """
 
     env: {} = build_sync_env(context['execution_date'])
 
-    for download in downloads:
+    for download in downs:
         # syncOneWork.sh [ -h ] [ -a archiveParent ] [ -w webParent ] [ -s successWorkList ] workPath
-        BashOperator(
+        airflow.operators.bash.BashOperator(
             task_id="sync_debag",
             bash_command=f"syncOneWork.sh -a {str(DEST_PATH)}  -s $(mktemp) {download}",
             env=env
@@ -437,8 +488,9 @@ with DAG('sqs_manual_dag', schedule=None, tags=['bdrc']) as gs_dag:
     msgs = get_restored_object_messages()
     downloads = download_from_messages(msgs)
     to_sync = debag_downloads(downloads)
-    syncd = sync_debagged(to_sync)
+    sync_debagged(to_sync)
 
 if __name__ == '__main__':
+    # noinspection PyArgumentList
     gs_dag.test()
     # gs_dag.cli()
