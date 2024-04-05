@@ -472,11 +472,12 @@ def sync_debagged(downs: [str], **context):
         ).execute(context)
 
 
-with DAG('sqs_manual_dag',
+with DAG('sqs_scheduled_dag',
          schedule=DEV_TIME_DELTA,
-         start_date=datetime(2024, 4, 4,23,32),
-         end_date=datetime(2024, 4, 6, hour=23),
+         start_date=datetime(2024, 4, 5,9,  32),
+         end_date=datetime(2024, 4, 8, hour=23),
          tags=['bdrc'],
+         catchup=False, # SUPER important. Catchups can confuse the Postgres DB
          max_active_runs=4) as sync_dag:
     # smoke test
     # notify = BashOperator(
