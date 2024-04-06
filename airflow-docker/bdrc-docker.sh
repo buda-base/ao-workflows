@@ -13,15 +13,20 @@ source ${INIT_SYS}
 
 # D'OH AIRFLOW_UID is a **BUILD**arg.
 # Must be invoked on a system that has the uid service
-xa_uid=$(id -u service)
+#
+# prod
+#xa_uid=$(id -u service)
+# dev (fix aslo in bdrc-docker-compose.yml)
+xa_uid=$(id -u)
 export AIRFLOW_UID="${xa_uid}"
 
 usage() {
-echo "Usage: ${ME}  [-h|--help]  [-m|--requirements <dag-requirements-file>] [-l|--build_dir <build-dir>]"
-echo "Invokes the any_service:build target in bdrc-docker-compose.yml"
-echo "  -h|--help"
-echo "  -m|--requirements <dag-requirements-file>: default: ./StagingGlacierProcess-requirements.txt"
-echo "  -l|--build_dir <build-dir>: default: ~/tmp/compose-build"
+  # Brackets without spaces mess up ReST
+  echo "Usage: ${ME}  [ -h|--help ]  [ -m|--requirements <dag-requirements-file> ] [ -d|--build_dir <build-dir> ]"
+  echo "Invokes the any_service:build target in bdrc-docker-compose.yml"
+  echo "  -h|--help"
+  echo "  -m|--requirements <dag-requirements-file>: default: ./StagingGlacierProcess-requirements.txt"
+  echo "  -d|--build_dir <build-dir>: default: ~/tmp/compose-build"
 }
 
 
