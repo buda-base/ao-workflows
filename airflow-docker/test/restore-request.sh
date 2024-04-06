@@ -66,7 +66,6 @@ echo "${work_key}:${req_details}" | tee ./${work}_restore_request.log
 if [[ -z "${list_only}" ]]; then
   aws s3 mv ./${work}_restore_request.log s3://manifest.bdrc.org/ao1060/restore_requests/${work}_restore_request.log
 else
-  cat ./${work}_restore_request.log
   rm ./${work}_restore_request.log
 fi
 
