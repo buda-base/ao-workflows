@@ -452,8 +452,19 @@ def download_from_messages(s3_records) -> [str]:
 
             download_full_path: Path = DOWNLOAD_PATH / key
             dfp_str: str = str(download_full_path)
+            pp(f"{download_full_path=}\n{dfp_str=}")
             os.makedirs(download_full_path.parent, exist_ok=True)
 
+            # Debug test - write to the bind mount
+            
+            # import pendulum
+            # current_date = pendulum.now()
+            # with open(DOWNLOAD_PATH / "test_file", 'w') as tf:    
+            #     tf.writelines([f"Howdy at {current_date.to_iso8601_string()}"])
+            # # test what's in the bind mount?
+            # with os.scandir(DOWNLOAD_PATH) as dentries:
+            #     for dentry in dentries:
+            #         pp(f"{dentry.name=} type={'f' if dentry.is_file() else 'd' if dentry.is_dir() else '?'}")
             # maybe a use for this later
             # hash = s3_record['s3']['object']['eTag']
 
@@ -519,7 +530,7 @@ def sync_debagged(downs: [str], **context):
 with DAG('sqs_scheduled_dag',
          schedule=DEV_TIME_DELTA,
          start_date=datetime(2024, 4, 5,9,  32),
-         end_date=datetime(2024, 4, 8, hour=23),
+         end_date= None, #  datetime(2024, 4, 13, hour=23),
          tags=['bdrc'],
          catchup=False, # SUPER important. Catchups can confuse the Postgres DB
          max_active_runs=4) as sync_dag:

@@ -46,7 +46,7 @@ init_test_env() {
   # Make download target
   todo=${1}/AO-staging-Incoming/bag-download
   mkdir -p $todo || exit 1
-  chmod -R 777 $todo
+  chmod -R 777 ${1}/AO-staging-Incoming
 }
 
 OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env -- "$@")
