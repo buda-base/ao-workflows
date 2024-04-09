@@ -151,6 +151,50 @@ default_args = {
 #     str(shutil.copy(BASE_PATH / "save-W1FPL2251.bag.zip", DOWNLOAD_PATH / "miniW1FPL2251.bag.zip"))]
 
 mock_message: [] = [
+    dict(
+        {
+            "eventVersion": "2.1",
+            "eventSource": "aws:s3",
+            "awsRegion": "ap-northeast-2",
+            "eventTime": "2024-04-06T00:11:23.730Z",
+            "eventName": "ObjectRestore:Completed",
+            "userIdentity": {
+                "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"
+            },
+            "requestParameters": {
+                "sourceIPAddress": "s3.amazonaws.com"
+            },
+            "responseElements": {
+                "x-amz-request-id": "439897F6741FD9BA",
+                "x-amz-id-2": "MF0oW9le+g8K5/R/uUks1QuFbZxNuSmZDWQ5utu8ZTcHEKSGFHzdFBEtebICzrPtG3YL1YVmffxhRw4nDPTZ1w=="
+            },
+            "s3": {
+                "s3SchemaVersion": "1.0",
+                "configurationId": "BagCreatedNotification",
+                "bucket": {
+                    "name": "glacier.staging.nlm.bdrc.org",
+                    "ownerIdentity": {
+                        "principalId": "A1JPP2WW1ZYN4F"
+                    },
+                    "arn": "arn:aws:s3:::glacier.staging.nlm.bdrc.org"
+                },
+                "object": {
+                    "key": "Archive0/00/W1NLM4700/W1NLM4700.bag.zip",
+                    "size": 17017201852,
+                    "eTag": "41654cbd2a8f2d3c0abc83444fde825b-2029",
+                    "sequencer": "00638792A45B638391"
+                }
+            },
+            "glacierEventData": {
+                "restoreEventData": {
+                    "lifecycleRestorationExpiryTime": "2024-04-12T00:00:00.000Z",
+                    "lifecycleRestoreStorageClass": "DEEP_ARCHIVE"
+                }
+            }
+        }
+    )]
+
+mock_message1: [] = [
     dict(eventVersion="2.1", eventSource="aws:s3", awsRegion="us-east-1", eventTime="2024-02-24T08:47:18.267Z",
          eventName="ObjectRestore:Completed", userIdentity={
             "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"
@@ -312,7 +356,7 @@ def get_restored_object_messages():
     :return:
     """
     # DEBUG
-    # return mock_message
+    return mock_message
 
     # output buffer
     s3_records = []
