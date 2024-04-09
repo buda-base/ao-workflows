@@ -85,10 +85,15 @@ services:
     depends_on:
       - postgres
     volumes:
+      # System logs
       - ./logs:/opt/airflow/logs
-    # For testing on local mac. This is a good reason for not
-    # using files, but a service. Note this folder has to match test_access_permissions.py
-    #  - /mnt/Archive0/00/TestArchivePermissions:/home/airflow/extern/Archive0/00/TestArchivePermissions
+      # bind mount for download sink. Needed because 1 work's bag  overflows
+      # the available "space" in the container.
+      # See dags/glacier_staging_to_sync.py:download_from_messages
+      - ${ARCH_ROOT:-/mnt}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data/Incoming
+      # For testing on local mac. This is a good reason for not
+      # using files, but a service. Note this folder has to match test_access_permissions.py
+      #  - /mnt/Archive0/00/TestArchivePermissions:/home/airflow/extern/Archive0/00/TestArchivePermissions
       - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
       - ${ARCH_ROOT:-/mnt}/Archive1:/home/airflow/extern/Archive1
       - ${ARCH_ROOT:-/mnt}/Archive2:/home/airflow/extern/Archive2
