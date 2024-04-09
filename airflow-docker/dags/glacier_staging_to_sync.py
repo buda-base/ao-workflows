@@ -356,7 +356,7 @@ def get_restored_object_messages():
     :return:
     """
     # DEBUG
-    return mock_message
+    # return mock_message
 
     # output buffer
     s3_records = []
