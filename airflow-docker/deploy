@@ -35,11 +35,18 @@ function usage() {
   echo "You need to manually reference its output in the bdrc-docker-compose.yaml scheduler:volumes:"
 }
 init_test_env() {
+
+  # Make archive roots
   for d in $(seq 0 99); do
     todo=${1}/Archive$(($d / 25))/$(printf "%02d" $d)
     mkdir -p $todo || exit 1
     chmod -R 777 $todo
   done
+
+  # Make download target
+  todo=${1}/AO-staging-Incoming/bag-download
+  mkdir -p $todo || exit 1
+  chmod -R 777 ${1}/AO-staging-Incoming
 }
 
 OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env -- "$@")
