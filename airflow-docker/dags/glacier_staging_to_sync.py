@@ -97,7 +97,7 @@ DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
 PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
 
 # DEBUG:
-MY_TIME_DELTA = PROD_TIME_DELTA
+MY_TIME_DELTA:timedelta = PROD_TIME_DELTA
 REQUESTED_AWS_EVENTS: [str] = ['ObjectRestore:Completed', 'ObjectCreated:*']
 
 # our buckets and SQS queues are in these sections of the config
@@ -473,9 +473,9 @@ def sync_debagged(downs: [str], **context):
 
 
 with DAG('sqs_scheduled_dag',
-         schedule=DEV_TIME_DELTA,
+         schedule=MY_TIME_DELTA,
          start_date=datetime(2024, 4, 5,9,  32),
-         end_date=datetime(2024, 4, 8, hour=23),
+         end_date=datetime(2024, 5, 8, hour=23),
          tags=['bdrc'],
          catchup=False, # SUPER important. Catchups can confuse the Postgres DB
          max_active_runs=4) as sync_dag:
