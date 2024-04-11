@@ -37,6 +37,8 @@ services:
       args:
         SYNC_SCRIPTS_HOME: ${BIN}
         PY_REQS: ${COMPOSE_PY_REQS}
+        CONFIG_ROOT: ${BUILD_CONFIG_ROOT}
+
     image: *airflow_image
 
   postgres:

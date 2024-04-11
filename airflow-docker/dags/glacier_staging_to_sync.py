@@ -374,7 +374,7 @@ def get_restored_object_messages():
     :return:
     """
     # DEBUG
-    return mock_message
+    # return mock_message
 
     # output buffer
     s3_records = []
@@ -445,7 +445,6 @@ def get_restored_object_messages():
 @task
 def download_from_messages(s3_records) -> [str]:
     """
-
     :param s3_records: object restored format
     :return: Nothing
     """
@@ -511,7 +510,8 @@ def debag_downloads(downs: [str]) -> [str]:
     :return: list of **path names** of  unbagged work archives. path object is not serializable,
     so returning strings
     """
-    return ['/home/airflow/bdrc/data/work/W1NLM4700']
+    # DEBUG
+    # return ['/home/airflow/bdrc/data/work/W1NLM4700']
     os.makedirs(STAGING_PATH, exist_ok=True)
     debagged: [Path] = []
 
@@ -544,16 +544,10 @@ def sync_debagged(downs: [str], **context):
 
     pp(env)
 
-    # Once again, ChatGPT Copilot comes to the rescue:
-    # Prompt: the airflow BashOperator doesn't have the PIPESTATUS variable defined, as it would if it were really running bash
-    # Answer:
-
-    # See  syncOneWork.sh [ -h ] [ -a archiveParent ] [ -w webParent ] [ -s successWorkList ] workPath
-    # Need this workaround to enable PIPESTATUS
-    
     
     for download in downs:
 
+        # Build the sync command
         # The moustaches {{}} inject a literal, not an fString resolution
         bash_command= f"""
         #!/usr/bin/env bash
