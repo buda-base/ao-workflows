@@ -78,6 +78,20 @@ def local_tz():
 
 Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 'queue_name', 'config_section_name'])
 
+# region ------------- PROD/DEV CONFIG  ----------------------------
+# Edit these parameters - this section is only for parameters that differ
+# between production and test
+
+DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
+PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
+
+#
+# DB for log_dip
+PROD_DB: str = 'prod'
+DEV_DB: str  = 'qa'
+# region ------------- /PROD/DEV CONFIG  ----------------------------
+
+# region ------------   RESOURCE CONFIG  ----------------------------
 # See AWSIntake.setup-aws.py for the queue names
 # See 'deploy' for the config section names
 download_map: [Download_Map] = [
@@ -87,21 +101,35 @@ download_map: [Download_Map] = [
 ]
 # Region, SQS client
 
-regional_queue_buckets: [()]
+
 UNGLACIERED_QUEUE_NAME: str = 'ManifestReadyToIntake'
 
 # For determining some file sys roots
 DARWIN_PLATFORM: str = "darwin"
 
-DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
-PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
-
-# DEBUG:
-MY_TIME_DELTA:timedelta = PROD_TIME_DELTA
 REQUESTED_AWS_EVENTS: [str] = ['ObjectRestore:Completed', 'ObjectCreated:*']
 
 # our buckets and SQS queues are in these sections of the config
 REQUESTED_AWS_SECTIONS: [str] = ['default', 'ap_northeast']
+
+# region ------------   RESOURCE CONFIG  ----------------------------
+
+# --------------------- LOAD CONFIG  ---------------
+# Loads the values set in MY_.....
+
+MY_TIME_DELTA:timedelta = PROD_TIME_DELTA
+MY_DB: str = PROD_DB
+# --------------------- / LOAD CONFIG  ---------------
+
+# region --------------- SETUP DAG    ----------------
+#
+# this section configures the DAG filesystem. Coordinate with bdrc-docker-compose.yml
+#  scheduler:
+#       ...
+#       volumes:
+#          ....
+
+regional_queue_buckets: [()]
 #
 # Use an environment variable to set the base path
 # See docker-compose.yml for the roots/home/a
@@ -123,7 +151,8 @@ _DB_CONFIG: Path = Path.home() / ".config" / "bdrc" / "db_apps.config" if not Pa
     Path("/run/secrets/db_apps")) else Path("/run/secrets/db_apps")
 
 # select a level (used in syncing)
-prod_level: str = 'qa'  # 'prod' in production
+
+prod_level: str =  MY_DB
 # used in syncing
 util_ver: str
 try:
@@ -131,18 +160,7 @@ try:
 except:
     util_ver = "Unknown"
 
-default_args = {
-    'owner': 'airflow',
-    'depends_on_past': False,
-    #    'start_date': datetime(2024, 2, 20),
-    #    'email': ['your-email@example.com'],
-    'email_on_failure': False,
-    'email_on_retry': False,
-    'retries': 22,
-    'retry_delay': timedelta(minutes=1),
-    'catchup': False,
-    'schedule_interval': None
-}
+
 
 # -----------------  mocks for testing / debugging ------------------------
 # Set up this copy for mock objects, because debagging is destructive
@@ -356,7 +374,7 @@ def get_restored_object_messages():
     :return:
     """
     # DEBUG
-    # return mock_message
+    return mock_message
 
     # output buffer
     s3_records = []
@@ -452,7 +470,7 @@ def download_from_messages(s3_records) -> [str]:
 
             download_full_path: Path = DOWNLOAD_PATH / key
             dfp_str: str = str(download_full_path)
-            pp(f"{download_full_path=}\n{dfp_str=}")
+            pp(f"{download_full_path=} {dfp_str=}")
             os.makedirs(download_full_path.parent, exist_ok=True)
 
             # Debug test - write to the bind mount
@@ -469,7 +487,9 @@ def download_from_messages(s3_records) -> [str]:
             # hash = s3_record['s3']['object']['eTag']
 
             s3 = get_cached_session(get_download_map_for_region(awsRegion).config_section_name).client('s3')
-            s3.download_file(bucket, key, dfp_str)
+            # Debug,. Just keep using the same file. Externally, copy from a source
+            # before a run, because debag will delete the source
+            # s3.download_file(bucket, key, dfp_str)
 
             pp(f"Downloaded S3://{bucket}/{key} to {dfp_str}")
             downloaded_paths.append(str(download_full_path))
@@ -491,6 +511,7 @@ def debag_downloads(downs: [str]) -> [str]:
     :return: list of **path names** of  unbagged work archives. path object is not serializable,
     so returning strings
     """
+    return ['/home/airflow/bdrc/data/work/W1NLM4700']
     os.makedirs(STAGING_PATH, exist_ok=True)
     debagged: [Path] = []
 
@@ -499,6 +520,9 @@ def debag_downloads(downs: [str]) -> [str]:
     # BUG - can have multiple entries for same zip. Deduplicate
 
     unique_downs = list(set(downs))
+
+    pp(unique_downs)
+    pp(STAGING_PATH)
 
     for down in unique_downs:
         debagged.extend([str(d) for d in bag_ops.debag(down, str(STAGING_PATH))])
@@ -518,19 +542,53 @@ def sync_debagged(downs: [str], **context):
 
     env: {} = build_sync_env(context['execution_date'])
 
+    pp(env)
+
+    # Once again, ChatGPT Copilot comes to the rescue:
+    # Prompt: the airflow BashOperator doesn't have the PIPESTATUS variable defined, as it would if it were really running bash
+    # Answer:
+
+    # See  syncOneWork.sh [ -h ] [ -a archiveParent ] [ -w webParent ] [ -s successWorkList ] workPath
+    # Need this workaround to enable PIPESTATUS
+    
+    
     for download in downs:
-        # syncOneWork.sh [ -h ] [ -a archiveParent ] [ -w webParent ] [ -s successWorkList ] workPath
+
+        # The moustaches {{}} inject a literal, not an fString resolution
+        bash_command= f"""
+        #!/usr/bin/env bash
+        syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{download}" 2>&1 | tee $syncLogDateTimeFile
+        rc=${{PIPESTATUS[0]}}
+        exit $rc
+        """
+
         airflow.operators.bash.BashOperator(
             task_id="sync_debag",
-            bash_command=f"syncOneWork.sh -a {str(DEST_PATH)}  -s $(mktemp) {download} 2>&1 | tee $syncLogDateTimeFile",
+            bash_command=bash_command,
             env=env
         ).execute(context)
 
 
+# Not used: but you could pass it in to DAG constructor
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    #    'start_date': datetime(2024, 2, 20),
+    #    'email': ['your-email@example.com'],
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 22,
+    'retry_delay': timedelta(minutes=1),
+    'catchup': False,
+    'schedule_interval': None
+}
+
 with DAG('sqs_scheduled_dag',
-         schedule=MY_TIME_DELTA,
-         start_date=datetime(2024, 4, 5,9,  32),
-         end_date=datetime(2024, 5, 8, hour=23),
+         # schedule=MY_TIME_DELTA,
+         # DEBUG
+         schedule=None,
+         # start_date=datetime(2024, 4, 5,9,  32),
+         # end_date=datetime(2024, 5, 8, hour=23),
          tags=['bdrc'],
          catchup=False, # SUPER important. Catchups can confuse the Postgres DB
          max_active_runs=4) as sync_dag:
