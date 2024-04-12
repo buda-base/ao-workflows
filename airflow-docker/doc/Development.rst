@@ -1,6 +1,6 @@
-=======================
+========================
 BDRC Airflow Development
-=======================
+========================
 
 This document contains details of the different elements of ``airflow-docker`` and how their elements relate.
 
@@ -88,11 +88,13 @@ The other purpose of ``bdrc-docker-compose.yml`` is to guide the run-time execut
 #. Creates a compose build directory (the ``--dest`` argument)
 #. Copies the ``bdrc-docker-compose.yml`` file to the compose build directory/``docker-compose.yaml`` (for normalization).
 #. Creates useful folders in the ``--dest`` directory:
+
 - ``logs`` for the logs
     - ``dags`` for the DAGs
     - ``plugins`` for the plugins (none used)
     - ``processing`` for the logs
     - ``data`` for working data (most usually, downloaded archives)
+
 #. Populates ``secrets`` - See :ref:`docker-concepts`
 #. Populates the ``.env`` file, the default, ** and only ** external source for the environment available to the ``docker compose`` command.  ``.env`` is the source for resolving variables in the docker-compose.yaml file.
 
@@ -129,7 +131,7 @@ What is actually happening
 All this work supports essentially four functions, which comprise the process. The process container is an airflow DAG named  ``sqs_scheduled_dag``  It appears in the docker UI (https://sattva:8089) as ``sqs_scheduled_dag``.
 
 .. image:: ./.images/Dag_view.png
-    :caption: The ``sqs_scheduled_dag`` DAG in the Airflow UI
+
 
 The DAG contains four :strong:`tasks`, which operate sequentially: their relationship is defined in the code quite directly, using an advanced airflow concept known as the ``Taskflow API``.
 
@@ -144,10 +146,19 @@ In the Airflow UI, their relationship is shown in  the UI:
 
 .. image:: ./.images/Task-graph.png
     :width: 100%
-    :caption: The ``sqs_scheduled_dag`` DAG in the Airflow UI
 
 
-The actions of the scripts are self-explanatory, but there are two interesting notes that somehwat justify the effort
+The actions of the scripts are mostly straightforward Python, but there are two airflow specific elements worth noting:
+
+Retrying when there is no data
+-------------------------------
+
+The  ``get_restored_object_messages``` task will retry if there are no messages. This is shown in the  task graph above: the task is labeled as 'up-for-retry'  This is given as a parameter to the task's decorator. This is the only task to retry on failure, as it is the only one expected to fail, when there are no object messages to retrieve.
+
+Using a bash shell
+------------------
+
+
 
 
 

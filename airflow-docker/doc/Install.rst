@@ -13,8 +13,7 @@ so it must contain all the DAG's dependencies (except airflow itself)
 
 Definitions
 -----------
-:host: The physical machine that the docker containers run on  (real world). in a docker compose
-``volumes`` stanza, this is the left hand side of the colon. In a ``secrets:`` stanza, it's the terminal node.
+:host: The physical machine that the docker containers run on  (real world). in a docker compose ``volumes`` stanza, this is the left hand side of the colon. In a ``secrets:`` stanza, it's the terminal node.
 
 :container: The docker container that is running.
 
@@ -40,7 +39,6 @@ After a few minutes, open up a browser to localhost:8089 (admin/admin)
 
     Do not activate the ``sqs_scheduled_dag``in the Web UI. If you do that, works may not be sync'd.  See :ref:`Development.rst` for the DAG fuctionality.
 
-Please see
 
 airflow-docker project architecture
 ===================================
