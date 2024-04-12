@@ -105,7 +105,7 @@ Details
 Deploying the Runtime: ``deploy``
 ---------------------------------
 
-This  ``deploy`` script step creates **or updates**  the environment that the docker service ``scheduler`` runs in.
+This  ``deploy`` script step creates **or updates**  the environment that the docker compose container runs in.
 The ``--dest`` argument becomes the directory that is the context in which the ``bdrc-airflow`` image runs. So, in a ``docker-compose.yaml`` statement like:
 
 .. code-block:: yaml
@@ -145,34 +145,6 @@ It also:
 - AWS credentials
 
 Note that secrets are used exclusively by Python code - other applications, such as the bash sync script need specific additions that are built into the ``bdrc-airflow`` image.
-- populates the ``.env`` file that docker compose reads for the docker-compose.yaml` runtime. ``.env`` is the source for resolving variables in the docker-compose.yaml file.
-
-``.env`` fragment:
-
-.. code-block:: bash
-
-    COMPOSE_PY_REQS=
-    BIN=
-    ARCH_ROOT=/mnt
-    ... # other variables
-    SYNC_ACCESS_UID=1001
-
-references in bdrc-docker-compose.yml:
-
-.. code-block:: yaml
-
-  scheduler:
-   ...
-    user: ${SYNC_ACCESS_UID}
-    ...
-      - ${ARCH_ROOT:-.}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data
-
-
-.. note::
-
-    The ``- ${ARCH_ROOT:-.}/AO-staging-Incoming`` uses standard bash variable resolution. If ``ARCH_ROOT`` is not set, it uses ``.``. This is a common pattern in the ``.env`` file.
-
-
 
 
 How to use deploy

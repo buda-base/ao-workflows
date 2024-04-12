@@ -93,7 +93,63 @@ The other purpose of ``bdrc-docker-compose.yml`` is to guide the run-time execut
     - ``plugins`` for the plugins (none used)
     - ``processing`` for the logs
     - ``data`` for working data (most usually, downloaded archives)
-#. Populates ``secrets`` - this is a standard docker compose concept left to the reader as an exercise
-#. Populates the ``.env`` file, the default, ** and only ** external source for the environment available to the ``docker compose`` command.
+#. Populates ``secrets`` - See :ref:`docker-concepts`
+#. Populates the ``.env`` file, the default, ** and only ** external source for the environment available to the ``docker compose`` command.  ``.env`` is the source for resolving variables in the docker-compose.yaml file.
+
+``.env`` fragment:
+
+.. code-block:: bash
+
+    COMPOSE_PY_REQS=
+    BIN=
+    ARCH_ROOT=/mnt
+    ... # other variables
+    SYNC_ACCESS_UID=1001
+
+references in bdrc-docker-compose.yml:
+
+.. code-block:: yaml
+
+  scheduler:
+   ...
+    user: ${SYNC_ACCESS_UID}
+    ...
+      - ${ARCH_ROOT:-.}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data
+
+
+.. note::
+
+    The ``- ${ARCH_ROOT:-.}/AO-staging-Incoming`` uses standard bash variable resolution. If ``ARCH_ROOT`` is not set, it uses ``.``. This is a common pattern in the ``.env`` file.
+
+From the ``--dest`` dir, you can then control the docker compose with ``docker compose`` commands.
+
+What is actually happening
+==========================
+
+All this work supports essentially four functions, which comprise the process. The process container is an airflow DAG named  ``sqs_scheduled_dag``  It appears in the docker UI (https://sattva:8089) as ``sqs_scheduled_dag``.
+
+.. image:: ./.images/Dag_view.png
+    :caption: The ``sqs_scheduled_dag`` DAG in the Airflow UI
+
+The DAG contains four :strong:`tasks`, which operate sequentially: their relationship is defined in the code quite directly, using an advanced airflow concept known as the ``Taskflow API``.
+
+.. code-block:: python
+
+    msgs = get_restored_object_messages()
+    downloads = download_from_messages(msgs)
+    to_sync = debag_downloads(downloads)
+    sync_debagged(to_sync)
+
+In the Airflow UI, their relationship is shown in  the UI:
+
+.. image:: ./.images/Task-graph.png
+    :width: 100%
+    :caption: The ``sqs_scheduled_dag`` DAG in the Airflow UI
+
+
+The actions of the scripts are self-explanatory, but there are two interesting notes that somehwat justify the effort
+
+
+
 
 
