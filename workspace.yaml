@@ -1,9 +1,0 @@
-load_from:
-  - python_file:
-      relative_path: IARemediate/iacrawl.py
-      location_name: ia_crawl_v_39
-      working_directory: IARemediate
-  - python_file:
-      relative_path: iiifpresCrawl/iiifpres_crawl_ops.py
-      location_name: iiif_crawl_py_39
-      working_directory: iiifpresCrawl
