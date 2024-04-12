@@ -122,11 +122,12 @@ COMPOSE_PY_REQS=
 BIN=
 COMPOSE_BUILD_DIR=
 # Comment ARCH_ROOT in production, to use the default /mnt in bdrc-docker-compose
+# DEBUG_DEV
 # ARCH_ROOT=.
 ARCH_ROOT=
 #
 # For build only
-export BUILD_CONFIG_ROOT=
+BUILD_CONFIG_ROOT=
 
 SYNC_ACCESS_UID=$_PROD_SYNC_ACCESS_UID
 EOF

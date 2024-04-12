@@ -57,12 +57,14 @@ We expect to get, in Response['Messages][0]['Body']['Records'] a set if dicts,
 import collections
 import json
 import os
+import sys
 from pprint import pp
-
+import shutil
 import airflow.operators.bash
 
 from airflow import DAG
 from airflow.decorators import task
+from airflow.exceptions import AirflowFailException, AirflowException
 from datetime import datetime, timedelta
 from bdrc_bag import bag_ops
 from util_lib.version import bdrc_util_version
@@ -145,7 +147,7 @@ os.makedirs(STAGING_PATH, exist_ok=True)
 APP_LOG_ROOT = Path.home() / "bdrc" / "log"
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
-DEST_PATH = Path.home() / "extern" / "Archive"
+DEST_PATH:Path  = Path("/mnt", "Archive")
 # Non docker
 _DB_CONFIG: Path = Path.home() / ".config" / "bdrc" / "db_apps.config" if not Path.exists(
     Path("/run/secrets/db_apps")) else Path("/run/secrets/db_apps")
@@ -367,13 +369,13 @@ def build_sync_env(execution_date) -> dict:
 # ----------------------   airflow task declarations  -------------------------
 
 
-@task
+@task( retries=10,retry_delay=timedelta(hours=6))
 def get_restored_object_messages():
     """
     Pull a message from SQS
     :return:
     """
-    # DEBUG
+    # DEBUG_DEV
     # return mock_message
 
     # output buffer
@@ -435,10 +437,10 @@ def get_restored_object_messages():
         pass
         #     for session in session_dict.values():
         #         session.close()
-    # DEBUG
-    # return mock_message
 
     pp(f"Returning {len(s3_records)}")
+    if not s3_records:
+        raise AirflowException("No restore requests available")
     return s3_records
 
 
@@ -472,30 +474,32 @@ def download_from_messages(s3_records) -> [str]:
             pp(f"{download_full_path=} {dfp_str=}")
             os.makedirs(download_full_path.parent, exist_ok=True)
 
-            # Debug test - write to the bind mount
-            
-            # import pendulum
-            # current_date = pendulum.now()
-            # with open(DOWNLOAD_PATH / "test_file", 'w') as tf:    
-            #     tf.writelines([f"Howdy at {current_date.to_iso8601_string()}"])
-            # # test what's in the bind mount?
-            # with os.scandir(DOWNLOAD_PATH) as dentries:
-            #     for dentry in dentries:
-            #         pp(f"{dentry.name=} type={'f' if dentry.is_file() else 'd' if dentry.is_dir() else '?'}")
-            # maybe a use for this later
-            # hash = s3_record['s3']['object']['eTag']
 
             s3 = get_cached_session(get_download_map_for_region(awsRegion).config_section_name).client('s3')
-            # Debug,. Just keep using the same file. Externally, copy from a source
+            # DEBUG Just keep using the same file. Externally, copy from a source
             # before a run, because debag will delete the source
-            # s3.download_file(bucket, key, dfp_str)
+            # DEBUG_DEV
+            s3.download_file(bucket, key, dfp_str)
+            # DEBUG_DEV
+            # return [dfp_str]
 
             pp(f"Downloaded S3://{bucket}/{key} to {dfp_str}")
-            downloaded_paths.append(str(download_full_path))
+            downloaded_paths.append(dfp_str)
+            # Some exceptions, trigger retry
         except KeyError as e:
-            pp(f'KeyError: {e}')
+            err: str = f'KeyError: {e}'
+            pp(err)
+            raise ValueError(err)
         except ClientError as e:
-            pp(f"Could not retrieve S3://{bucket}/{key}:  {e} ")
+            err: str = f"Could not retrieve S3://{bucket}/{key}:  {e} "
+            pp(err)
+            raise ValueError(err)
+        # General exception fails
+        except:
+            ei = sys.excinfo()
+            pp(ei)
+            raise AirflowFailException(str(ei[1]))
+            
     else:
         pp('No messages')
 
@@ -510,7 +514,7 @@ def debag_downloads(downs: [str]) -> [str]:
     :return: list of **path names** of  unbagged work archives. path object is not serializable,
     so returning strings
     """
-    # DEBUG
+    # DEBUG_DEV
     # return ['/home/airflow/bdrc/data/work/W1NLM4700']
     os.makedirs(STAGING_PATH, exist_ok=True)
     debagged: [Path] = []
@@ -525,13 +529,24 @@ def debag_downloads(downs: [str]) -> [str]:
     pp(STAGING_PATH)
 
     for down in unique_downs:
-        debagged.extend([str(d) for d in bag_ops.debag(down, str(STAGING_PATH))])
+        # DEBUG_DEV - bypass debagging - just use what's there
+        # debagged_downs:[] = ['/home/airflow/bdrc/data/work/W1NLM4700']
+        debagged_downs:[] = [str(d) for d in bag_ops.debag(down, str(STAGING_PATH))]
+        debagged.extend(debagged_downs)
+
+        # Add the bad manifest to the work to archive
+        for db_down in debagged_downs:
+            work_name: str = Path(db_down).stem
+
+            # Use some secret badass knowledge about how bag_ops.debag works
+            # to know that the bag_ops creates a dir "bags" under
+            # STAGING_PATH, and that contains a directory named <workname>.bag
+            bag_path: Path = STAGING_PATH /  "bags" /  f"{work_name}.bag"
+            pp(f"{work_name=} {db_down=} {bag_path=}")
+            shutil.move(bag_path, db_down)
     return debagged
 
 
-# create a set from a list of strings
-
-#
 @task
 def sync_debagged(downs: [str], **context):
     """
@@ -540,6 +555,8 @@ def sync_debagged(downs: [str], **context):
     :param context: airflow context
     """
 
+    # DEBUG_DEV
+    # return 0
     env: {} = build_sync_env(context['execution_date'])
 
     pp(env)
@@ -578,18 +595,23 @@ default_args = {
 }
 
 with DAG('sqs_scheduled_dag',
+         # DEBUG_DEV - make a schedule
          # schedule=MY_TIME_DELTA,
-         # DEBUG
          schedule=None,
+         # DEBUG_DEV - make a date range
          # start_date=datetime(2024, 4, 5,9,  32),
          # end_date=datetime(2024, 5, 8, hour=23),
          tags=['bdrc'],
          catchup=False, # SUPER important. Catchups can confuse the Postgres DB
-         max_active_runs=4) as sync_dag:
-    # smoke test
-    # notify = BashOperator(
-    #     task_id="notify",
-    #     bash_command='echo "HOWDY! There are now $(ls /tmp/images/ | wc -l) images."')
+         max_active_runs=4,
+
+         # Note we don't want to specify a retries argument for each/all tasks in the DAG.
+         # Except for the looking for SQS messages for retry: that should retry if there are no messages.
+         #
+         # retries = 5,
+         # retry_delay = timedelta(hours=6)
+
+) as sync_dag:
 
     msgs = get_restored_object_messages()
     downloads = download_from_messages(msgs)

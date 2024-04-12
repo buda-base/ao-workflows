@@ -28,7 +28,9 @@ RUN update-alternatives --install /usr/local/bin/audit-tool audit-tool /opt/audi
 # Will this help log permissions on debian?
 # Apparently not.
 # RUN chown -R airflow:0 /opt/airflow/logs
-
+#
+#  ao-workflows#18: Set up the external repository.
+RUN chmod 777 /mnt
 USER airflow
 WORKDIR /home/airflow
 # Copy specific scripts for the sync operation
