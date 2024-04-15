@@ -596,11 +596,11 @@ default_args = {
 
 with DAG('sqs_scheduled_dag',
          # DEBUG_DEV - make a schedule
-         # schedule=MY_TIME_DELTA,
-         schedule=None,
+         schedule=MY_TIME_DELTA,
+         # schedule=None,
          # DEBUG_DEV - make a date range
-         # start_date=datetime(2024, 4, 5,9,  32),
-         # end_date=datetime(2024, 5, 8, hour=23),
+         start_date=datetime(2024, 4, 13, 1, 22),
+         end_date=datetime(2024, 5, 8, xhour=23),
          tags=['bdrc'],
          catchup=False, # SUPER important. Catchups can confuse the Postgres DB
          max_active_runs=4,
