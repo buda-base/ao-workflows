@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>BDRC Airflow Development &#8212; BDRC Airflow 0.0.1 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="_static/classic.css?v=514cf933" />
+    
+    <script src="_static/documentation_options.js?v=d45e8c67"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Airflow docker" href="Install.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="Install.html" title="Airflow docker"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">BDRC Airflow 0.0.1 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">BDRC Airflow Development</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="bdrc-airflow-development">
+<h1>BDRC Airflow Development<a class="headerlink" href="#bdrc-airflow-development" title="Link to this heading">¶</a></h1>
+<p>This document contains details of the different elements of <code class="docutils literal notranslate"><span class="pre">airflow-docker</span></code> and how their elements relate.</p>
+<section id="architecture-of-this-module">
+<h2>Architecture of this module<a class="headerlink" href="#architecture-of-this-module" title="Link to this heading">¶</a></h2>
+<p>the principal components of this module are:</p>
+<ul class="simple">
+<li><p>the DAG code that runs the operations.</p></li>
+<li><p>facilities for marshalling code blocks.</p></li>
+<li><p>test utilities.</p></li>
+</ul>
+</section>
+<section id="building-the-image">
+<h2>Building the image<a class="headerlink" href="#building-the-image" title="Link to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">bdrc-compose-dockerfile.yml</span></code> has a dual role in this process. It not only is a standard dockerfile for <strong>running</strong> the image, but it is also used to <strong>build</strong> it. Building inside the dockerfile frees you from having to worry about changing directories to access the material, and keeps the build process out of the development repo.</p>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">bdrc-docker.sh</span></code> is the entry point to building the <strong>bdrc-airflow</strong> image, that <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">compose</span></code> runs later. It:</p>
+<ol class="arabic simple">
+<li><p>Sets up a <code class="docutils literal notranslate"><span class="pre">COMPOSE_BUILD_DIR</span></code></p></li>
+<li><p>if -rebuild, wipes out the <code class="docutils literal notranslate"><span class="pre">COMPOSE_BUILD_DIR</span></code> otherwise adds to it.</p></li>
+<li><p>Adds these elements to</p></li>
+<li><p>Copies in the <cite>archive-ops/scripts/syncAnywhere/deployment</cite>  scripts (<code class="docutils literal notranslate"><span class="pre">syncOneWork.sh</span></code>)</p></li>
+<li><p>Merges two sets of requirement files, and invokes  <code class="docutils literal notranslate"><span class="pre">RUN</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-r</span> <span class="pre">requirements.txt</span></code> on the image. This installs all the python libraries that both the DAG and the sync scripts require</p></li>
+<li><p>Brings down the audit tool install image from github and installs it.</p></li>
+<li><p>Adds the audit tool configuration to image.</p></li>
+<li><p>Exports environment variables for the <cite>docker compose build</cite> step. These are referenced in the <cite>bdrc-docker-compose.yml</cite> file:</p></li>
+</ol>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Really important to be careful about <code class="docutils literal notranslate"><span class="pre">.config</span></code>. We could possibly bind mount <code class="docutils literal notranslate"><span class="pre">~service/.config</span></code> to the container (since the container runs under the host’s <code class="docutils literal notranslate"><span class="pre">service</span></code> uid: (see <code class="docutils literal notranslate"><span class="pre">scheduler:....user:</span></code> clause in <cite>bdrc-docker-compose.yml`</cite>) but that brings in the whole tree, and is fragile. So I decided that copying the material from .config should be a manual operation that is selective. As the range of operations in airflow-docker expands, images may need to be built that need more entries from <code class="docutils literal notranslate"><span class="pre">.config</span></code> e.g, Google books.
+For now, just copy <code class="docutils literal notranslate"><span class="pre">bdrc/auditTool</span></code> into a config dir, and give that dir as the –config_dir argument. After the build is complete, it can be deleted, but should be preserved for next builds.</p>
+</div>
+<p>In <code class="docutils literal notranslate"><span class="pre">bdrc-docker.sh</span></code></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># in the bdrc-docker.sh:</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">DAG_REQUIREMENTS_DEFAULT</span><span class="o">=</span><span class="s2">&quot;./StagingGlacierProcess-requirements.txt&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">COMPOSE_AIRFLOW_IMAGE</span><span class="o">=</span>bdrc-airflow
+<span class="nb">export</span><span class="w"> </span><span class="nv">COMPOSE_BDRC_DOCKER</span><span class="o">=</span>bdrc-docker-compose.yml
+<span class="nb">export</span><span class="w"> </span><span class="nv">COMPOSE_BDRC_DOCKERFILE</span><span class="o">=</span>Dockerfile-bdrc
+<span class="nb">export</span><span class="w"> </span><span class="nv">BIN</span><span class="o">=</span>bin
+<span class="nb">export</span><span class="w"> </span><span class="nv">AUDIT_HOME</span><span class="o">=</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">BUILD_CONFIG_ROOT</span><span class="o">=</span>.config
+</pre></div>
+</div>
+<p>These are read by <code class="docutils literal notranslate"><span class="pre">bdrc-docker-compose.yml</span></code> to build the image:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1">#--------------------------------------------</span>
+<span class="c1"># Refereneced in the bdrc-docker-compose.yml, referenced:</span>
+<span class="w">  </span><span class="nt">any-name</span><span class="p">:</span>
+<span class="nt">build</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">context</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${COMPOSE_BUILD_DIR}</span>
+<span class="w">  </span><span class="nt">dockerfile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${COMPOSE_BDRC_AIRFLOW_DOCKERFILE:-Dockerfile-bdrc}</span>
+<span class="w">  </span><span class="nt">args</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">SYNC_SCRIPTS_HOME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BIN}</span>
+<span class="w">    </span><span class="nt">PY_REQS</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${COMPOSE_PY_REQS}</span>
+<span class="w">    </span><span class="nt">CONFIG_ROOT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${BUILD_CONFIG_ROOT}</span>
+</pre></div>
+</div>
+<p>Note especially the <code class="docutils literal notranslate"><span class="pre">args:</span></code> clause above. these are exported into Dockerfile-bdrc to build the image. Here are some examples of how Dockerfile-bdrc uses these:</p>
+<div class="highlight-Dockerfile notranslate"><div class="highlight"><pre><span></span><span class="k">ARG</span><span class="w"> </span>SYNC_SCRIPTS_HOME
+<span class="k">ARG</span><span class="w"> </span>PY_REQS
+<span class="k">ARG</span><span class="w"> </span>CONFIG_ROOT-<span class="w"> </span><span class="sb">``</span>bdrc-docker-compose.yml<span class="sb">``</span>
+.....
+<span class="k">ADD</span><span class="w"> </span><span class="nv">$SYNC_SCRIPTS_HOME</span><span class="w"> </span>bin
+<span class="k">ADD</span><span class="w"> </span><span class="nv">$PY_REQS</span><span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="building-the-container">
+<h2>Building the container<a class="headerlink" href="#building-the-container" title="Link to this heading">¶</a></h2>
+<p>The other purpose of <code class="docutils literal notranslate"><span class="pre">bdrc-docker-compose.yml</span></code> is to guide the run-time execution of the <code class="docutils literal notranslate"><span class="pre">bdrc-airflow</span></code> image. The script <code class="docutils literal notranslate"><span class="pre">deploy</span></code> sets this up. It:</p>
+<ol class="arabic simple">
+<li><p>Creates a compose build directory (the <code class="docutils literal notranslate"><span class="pre">--dest</span></code> argument)</p></li>
+<li><p>Copies the <code class="docutils literal notranslate"><span class="pre">bdrc-docker-compose.yml</span></code> file to the compose build directory/<code class="docutils literal notranslate"><span class="pre">docker-compose.yaml</span></code> (for normalization).</p></li>
+<li><p>Creates useful folders in the <code class="docutils literal notranslate"><span class="pre">--dest</span></code> directory:</p></li>
+</ol>
+<ul class="simple">
+<li><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">logs</span></code> for the logs</dt><dd><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">dags</span></code> for the DAGs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plugins</span></code> for the plugins (none used)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">processing</span></code> for the logs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> for working data (most usually, downloaded archives)</p></li>
+</ul>
+</dd>
+</dl>
+</li>
+</ul>
+<ol class="arabic simple">
+<li><p>Populates <code class="docutils literal notranslate"><span class="pre">secrets</span></code> - See <a class="reference internal" href="Install.html#docker-concepts"><span class="std std-ref">Docker concepts</span></a></p></li>
+<li><p>Populates the <code class="docutils literal notranslate"><span class="pre">.env</span></code> file, the default, ** and only ** external source for the environment available to the <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">compose</span></code> command.  <code class="docutils literal notranslate"><span class="pre">.env</span></code> is the source for resolving variables in the docker-compose.yaml file.</p></li>
+</ol>
+<p><code class="docutils literal notranslate"><span class="pre">.env</span></code> fragment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">COMPOSE_PY_REQS</span><span class="o">=</span>
+<span class="nv">BIN</span><span class="o">=</span>
+<span class="nv">ARCH_ROOT</span><span class="o">=</span>/mnt
+...<span class="w"> </span><span class="c1"># other variables</span>
+<span class="nv">SYNC_ACCESS_UID</span><span class="o">=</span><span class="m">1001</span>
+</pre></div>
+</div>
+<p>references in bdrc-docker-compose.yml:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">scheduler</span><span class="p">:</span>
+<span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">user</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${SYNC_ACCESS_UID}</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">- ${ARCH_ROOT:-.}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">-</span> <span class="pre">${ARCH_ROOT:-.}/AO-staging-Incoming</span></code> uses standard bash variable resolution. If <code class="docutils literal notranslate"><span class="pre">ARCH_ROOT</span></code> is not set, it uses <code class="docutils literal notranslate"><span class="pre">.</span></code>. This is a common pattern in the <code class="docutils literal notranslate"><span class="pre">.env</span></code> file.</p>
+</div>
+<p>From the <code class="docutils literal notranslate"><span class="pre">--dest</span></code> dir, you can then control the docker compose with <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">compose</span></code> commands.</p>
+</section>
+<section id="what-is-actually-happening">
+<h2>What is actually happening<a class="headerlink" href="#what-is-actually-happening" title="Link to this heading">¶</a></h2>
+<p>All this work supports essentially four functions, which comprise the process. The process container is an airflow DAG named  <code class="docutils literal notranslate"><span class="pre">sqs_scheduled_dag</span></code>  It appears in the docker UI (<a class="reference external" href="https://sattva:8089">https://sattva:8089</a>) as <code class="docutils literal notranslate"><span class="pre">sqs_scheduled_dag</span></code>.</p>
+<img alt="_images/Dag_view.png" src="_images/Dag_view.png" />
+<p>The DAG contains four <strong>tasks</strong>, which operate sequentially: their relationship is defined in the code quite directly, using an advanced airflow concept known as the <code class="docutils literal notranslate"><span class="pre">Taskflow</span> <span class="pre">API</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">msgs</span> <span class="o">=</span> <span class="n">get_restored_object_messages</span><span class="p">()</span>
+<span class="n">downloads</span> <span class="o">=</span> <span class="n">download_from_messages</span><span class="p">(</span><span class="n">msgs</span><span class="p">)</span>
+<span class="n">to_sync</span> <span class="o">=</span> <span class="n">debag_downloads</span><span class="p">(</span><span class="n">downloads</span><span class="p">)</span>
+<span class="n">sync_debagged</span><span class="p">(</span><span class="n">to_sync</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>In the Airflow UI, their relationship is shown in  the UI:</p>
+<a class="reference internal image-reference" href="_images/Task-graph.png"><img alt="_images/Task-graph.png" src="_images/Task-graph.png" style="width: 100%;" /></a>
+<p>The actions of the scripts are mostly straightforward Python, but there are two airflow specific elements worth noting:</p>
+<section id="retrying-when-there-is-no-data">
+<h3>Retrying when there is no data<a class="headerlink" href="#retrying-when-there-is-no-data" title="Link to this heading">¶</a></h3>
+<p>The  <code class="docutils literal notranslate"><span class="pre">get_restored_object_messages`</span></code> task will retry if there are no messages. This is shown in the  task graph above: the task is labeled as ‘up-for-retry’  This is given as a parameter to the task’s decorator. This is the only task to retry on failure, as it is the only one expected to fail, when there are no object messages to retrieve.</p>
+</section>
+<section id="using-a-bash-shell">
+<h3>Using a bash shell<a class="headerlink" href="#using-a-bash-shell" title="Link to this heading">¶</a></h3>
+<p>The task <code class="docutils literal notranslate"><span class="pre">sync</span> <span class="pre">debagged</span></code> uses a bash shell to run the <code class="docutils literal notranslate"><span class="pre">syncOneWork.sh</span></code> script. The environment to run that script is configured in the task itself. It is a separate environment from the docker image and the airflow container itself.</p>
+</section>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <div>
+    <h3><a href="index.html">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">BDRC Airflow Development</a><ul>
+<li><a class="reference internal" href="#architecture-of-this-module">Architecture of this module</a></li>
+<li><a class="reference internal" href="#building-the-image">Building the image</a></li>
+<li><a class="reference internal" href="#building-the-container">Building the container</a></li>
+<li><a class="reference internal" href="#what-is-actually-happening">What is actually happening</a><ul>
+<li><a class="reference internal" href="#retrying-when-there-is-no-data">Retrying when there is no data</a></li>
+<li><a class="reference internal" href="#using-a-bash-shell">Using a bash shell</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  </div>
+  <div>
+    <h4>Previous topic</h4>
+    <p class="topless"><a href="Install.html"
+                          title="previous chapter">Airflow docker</a></p>
+  </div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/Development.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="Install.html" title="Airflow docker"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">BDRC Airflow 0.0.1 documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">BDRC Airflow Development</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+    &#169; Copyright 2024, Buddhist Digital Resource Center.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    </div>
+  </body>
+</html>
