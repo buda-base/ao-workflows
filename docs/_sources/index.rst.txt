@@ -30,5 +30,6 @@ Making this doc
    git checkout gh-pages
    make SOURCEDIR=source BUILDDIR=build clean html
 
-    # open the generated html in your browser
-    open build/html/index.html
+   # open the generated html in your browser
+   open build/html/index.html
+   git push [origin] [gh-pages]
