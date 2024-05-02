@@ -15,7 +15,7 @@ Welcome to BDRC Airflow's documentation!
    Making
 
 Indices and tables
-==================phing
+==================
 
   :ref:`genindex`
   :ref:`modindex`
