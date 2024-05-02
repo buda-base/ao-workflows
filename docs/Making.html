@@ -52,6 +52,10 @@
 <em>branch</em> to <code class="docutils literal notranslate"><span class="pre">gh-pages</span></code> and the <code class="docutils literal notranslate"><span class="pre">source</span></code> to <code class="docutils literal notranslate"><span class="pre">docs/</span></code>, as shown above.</p>
 <p>This creates a Github action that will build the pages when the <cite>gh-branch</cite> is pushed to. See</p>
 <p>Then, simply fetch the <code class="docutils literal notranslate"><span class="pre">gh-pages</span></code> branch, and work in it.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Before beginning work, update the <cite>gh-pages</cite> branch from main. If future developers enable the code documentation, this will help keep the documentation up to date.</p>
+</div>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Open this project</span>
 <span class="nb">cd</span><span class="w"> </span>docs
 git<span class="w"> </span>checkout<span class="w"> </span>gh-pages
@@ -67,6 +71,21 @@ git<span class="w"> </span>merge<span class="w"> </span>main<span class="w"> </s
 ./make.sh
 </pre></div>
 </div>
+</section>
+<section id="other-targets">
+<h2>Other targets<a class="headerlink" href="#other-targets" title="Link to this heading">¶</a></h2>
+<p>There are other useful dedicated targets for <code class="docutils literal notranslate"><span class="pre">make.sh</span></code></p>
+<dl class="field-list simple">
+<dt class="field-odd">build<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The default, builds the html, and runs the <code class="docutils literal notranslate"><span class="pre">Makefile</span></code> target <code class="docutils literal notranslate"><span class="pre">copy-files</span></code> which places the build output where Github pages can find it: in the <code class="docutils literal notranslate"><span class="pre">docs/</span></code> directory.</p>
+</dd>
+<dt class="field-even">clean<span class="colon">:</span></dt>
+<dd class="field-even"><p>Removes the build directory</p>
+</dd>
+<dt class="field-odd">clean_build<span class="colon">:</span></dt>
+<dd class="field-odd"><p>the <code class="docutils literal notranslate"><span class="pre">build</span></code> target copies a lot of stuff into the <code class="docutils literal notranslate"><span class="pre">docs/</span></code> directory. This removes it. Not necessary, but sometimes helpful.</p>
+</dd>
+</dl>
 </section>
 <section id="review">
 <h2>Review<a class="headerlink" href="#review" title="Link to this heading">¶</a></h2>
@@ -108,6 +127,7 @@ git<span class="w"> </span>push<span class="w"> </span><span class="o">[</span>o
 <li><a class="reference internal" href="#get-sphinx">Get Sphinx</a></li>
 <li><a class="reference internal" href="#configure-ao-workflows-repo-for-githubpages">Configure AO Workflows repo for GitHubPages</a></li>
 <li><a class="reference internal" href="#build">Build</a></li>
+<li><a class="reference internal" href="#other-targets">Other targets</a></li>
 <li><a class="reference internal" href="#review">Review</a></li>
 <li><a class="reference internal" href="#commit">Commit</a></li>
 <li><a class="reference internal" href="#review-github-progress">Review Github progress</a></li>

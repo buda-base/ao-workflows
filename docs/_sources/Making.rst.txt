@@ -29,6 +29,10 @@ This creates a Github action that will build the pages when the `gh-branch` is p
 
 Then, simply fetch the ``gh-pages`` branch, and work in it.
 
+.. tip::
+
+    Before beginning work, update the `gh-pages` branch from main. If future developers enable the code documentation, this will help keep the documentation up to date.
+
 .. code-block:: bash
 
     # Open this project
@@ -45,6 +49,16 @@ Build
     git merge main gh-pages
     # Make the docs
     ./make.sh
+
+Other targets
+-------------
+There are other useful dedicated targets for ``make.sh``
+
+:build: The default, builds the html, and runs the ``Makefile`` target ``copy-files`` which places the build output where Github pages can find it: in the ``docs/`` directory.
+
+:clean: Removes the build directory
+
+:clean_build: the ``build`` target copies a lot of stuff into the ``docs/`` directory. This removes it. Not necessary, but sometimes helpful.
 
 Review
 ------

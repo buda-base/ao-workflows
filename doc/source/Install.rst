@@ -13,6 +13,7 @@ so it must contain all the DAG's dependencies (except airflow itself)
 
 Definitions
 -----------
+
 :host: The physical machine that the docker containers run on  (real world). in a docker compose ``volumes`` stanza, this is the left hand side of the colon. In a ``secrets:`` stanza, it's the terminal node.
 
 :container: The docker container that is running.
