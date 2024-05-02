@@ -17,6 +17,7 @@ help:
 copy-files:
 	@echo "Copying files to root directory"
 	cp -r build/html/*  .
+	touch .nojekyll
 
 clean_build:
 	@echo "Cleaning build directory"
