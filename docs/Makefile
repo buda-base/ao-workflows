@@ -15,15 +15,26 @@ help:
 .PHONY: help Makefile
 
 copy-files:
-	mv build/html/*  .
+	@echo "Copying files to root directory"
+	cp -r build/html/*  .
 
+clean_build:
+	@echo "Cleaning build directory"
+	rm -rf *.html *.inv *.js _images _sources _static
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
-%: Makefile
-	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+html: Makefile
+	@echo "Building documentation"
+	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)  $(O)
 
-build: %
-	@$(MAKE) html copy-files
-	@echo "Copying files to root directory"
-	# @$(MAKE)  copy-files
+%: Makefile
+	@echo "% - pass through"
+	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)  $(O)
+
+clean:
+	@$(SPHINXBUILD) -M clean "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)  $(O)
+	@echo "Cleaning build directory"
+	# rm -rf *.html *.inv *.js _images _sources _static
+
+build: html copy-files
 	@echo "Done"

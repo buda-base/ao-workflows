@@ -12,24 +12,12 @@ Welcome to BDRC Airflow's documentation!
 
    Install
    Development
+   Making
 
 Indices and tables
-==================
+==================phing
 
   :ref:`genindex`
   :ref:`modindex`
   :ref:`search`
 
-Making this doc
-===============
-
-.. code-block:: bash
-
-   # Open this project
-   cd doc
-   git checkout gh-pages
-   make SOURCEDIR=source BUILDDIR=build clean html
-
-   # open the generated html in your browser
-   open build/html/index.html
-   git push [origin] [gh-pages]

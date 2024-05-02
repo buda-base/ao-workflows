@@ -36,16 +36,41 @@
 <section id="get-sphinx">
 <h2>Get Sphinx<a class="headerlink" href="#get-sphinx" title="Link to this heading">¶</a></h2>
 <p><a class="reference external" href="https://www.sphinx-doc.org/en/master/tutorial/getting-started.html">Get Sphinx</a></p>
+</section>
+<section id="github">
+<h2>Github<a class="headerlink" href="#github" title="Link to this heading">¶</a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Open this project</span>
-<span class="nb">cd</span><span class="w"> </span>doc
+<span class="nb">cd</span><span class="w"> </span>docs
 git<span class="w"> </span>checkout<span class="w"> </span>gh-pages
-make<span class="w"> </span><span class="nv">SOURCEDIR</span><span class="o">=</span><span class="nb">source</span><span class="w"> </span><span class="nv">BUILDDIR</span><span class="o">=</span>build<span class="w"> </span>clean<span class="w"> </span>html
-
-<span class="c1"># open the generated html in your browser</span>
+</pre></div>
+</div>
+</section>
+<section id="build">
+<h2>Build<a class="headerlink" href="#build" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>pull<span class="w"> </span>origin<span class="w"> </span>gh-pages
+<span class="c1"># Bring in any doc changes</span>
+git<span class="w"> </span>merge<span class="w"> </span>main<span class="w"> </span>gh-pages
+<span class="c1"># Make the docs</span>
+./make.sh
+</pre></div>
+</div>
+</section>
+<section id="review">
+<h2>Review<a class="headerlink" href="#review" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># open the generated html in your browser</span>
 open<span class="w"> </span>build/html/index.html
+</pre></div>
+</div>
+</section>
+<section id="commit">
+<h2>Commit<a class="headerlink" href="#commit" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>commit
 git<span class="w"> </span>push<span class="w"> </span><span class="o">[</span>origin<span class="o">]</span><span class="w"> </span><span class="o">[</span>gh-pages<span class="o">]</span>
 </pre></div>
 </div>
+</section>
+<section id="review-github-progress">
+<h2>Review Github progress<a class="headerlink" href="#review-github-progress" title="Link to this heading">¶</a></h2>
 </section>
 </section>
 
@@ -72,6 +97,11 @@ git<span class="w"> </span>push<span class="w"> </span><span class="o">[</span>o
 <li class="toctree-l1"><a class="reference internal" href="Development.html">BDRC Airflow Development</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Making this doc</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#get-sphinx">Get Sphinx</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#github">Github</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#build">Build</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#review">Review</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#commit">Commit</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#review-github-progress">Review Github progress</a></li>
 </ul>
 </li>
 </ul>
