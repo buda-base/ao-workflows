@@ -7,6 +7,9 @@ import sys
 from pathlib import Path
 import configparser
 import boto3
+import dateutil
+import pendulum
+
 
 # iterate over a list of classes and return if any of them satisfies the match_class function
 def match_any_event_class(subject: str, event_classes: [str]) -> bool:
@@ -87,6 +90,53 @@ def get_aws_credentials(cred_file: Path, section: str = 'default') -> {}:
     _configParser.read(cred_file)
     print(f"{section=}   {_configParser.sections()}")
     return _configParser[section]
+
+
+class DipOpCodes():
+    RESTORED: int = 0
+    DOWNLOADED: int = 1
+    DEBAGGED: int = 2
+    SYNCD: int = 3
+
+def db_phase(op_code: str, work_rid: str, user_data:{} = None):
+    """
+    record the operation in the progress db
+    :param record: work_rid: search term of item to updatekey
+    """
+    from GlacierSyncProgress import GlacierSyncProgress
+    from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
+    from sqlalchemy.exc import NoResultFound
+
+    op_time: pendulum.DateTime = pendulum.now()
+
+    gsp: GlacierSyncProgress = GlacierSyncProgress()
+    gsp_found:bool = False
+
+    with DrsContextBase() as drs:
+        gsp: GlacierSyncProgress
+        try:
+            gsp = drs.query(GlacierSyncProgress).filter(GlacierSyncProgress.work_rid == work_rid).one()
+            gsp_found = True
+        except NoResultFound:
+            gsp = GlacierSyncProgress()
+            gsp.object_name = work_rid
+            gsp.user_data = list(user_data)
+            drs.add(gsp)
+            drs.commit()
+
+        if op_code == DipOpCodes.RESTORED:
+            gsp.restore_complete_on = op_time
+        elif op_code == DipOpCodes.DOWNLOADED:
+            gsp.download_complete_on = op_time
+        elif op_code == DipOpCodes.DEBAGGED:
+            gsp.download_debagged_on = op_time
+        elif op_code == DipOpCodes.SYNCD:
+            gsp.sync_complete_on = op_time
+
+        # Concatenate user data to existing, if given
+        if gsp_found and user_data:
+            gsp.phase_data = user_data
+        drs.commit()
 
 
 # DEBUG: Local

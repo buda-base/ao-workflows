@@ -161,5 +161,27 @@ Using a bash shell
 The task ``sync debagged`` uses a bash shell to run the ``syncOneWork.sh`` script. The environment to run that script is configured in the task itself. It is a separate environment from the docker image and the airflow container itself.
 
 
+Setting up development environment
+---------------------------
+
+
+.. warning::
+
+    Never assume safety - assume that there is a production backlog of messages waiting to be processed! Don't launch a test environment that consumes production data!
+
+
+#. deploy script
+    #. Edit the constants at the top of the file (e.g. ``ARCH_ROOT``)
+
+#. DAGS
+    #. ``glacier_staging_to_sync.py``
+
+        #. ``DEV|PROD CONFIG`` code section. This contains defintions for everything that is different between DEV and PROD at runtime. Use the DEV or PROD variants of the variables, that are defined in the CONST CONFIG code section.
+
+        #. ``DEBUG_DEV`` This commented label appears in places where you want to, say, mock a return of a fixed message. When building a dev environment, its good to scan for occurrences and take the appropriate action.
+
+
+
+
 
 
