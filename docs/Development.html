@@ -176,6 +176,40 @@ For now, just copy <code class="docutils literal notranslate"><span class="pre">
 <h3>Using a bash shell<a class="headerlink" href="#using-a-bash-shell" title="Link to this heading">¶</a></h3>
 <p>The task <code class="docutils literal notranslate"><span class="pre">sync</span> <span class="pre">debagged</span></code> uses a bash shell to run the <code class="docutils literal notranslate"><span class="pre">syncOneWork.sh</span></code> script. The environment to run that script is configured in the task itself. It is a separate environment from the docker image and the airflow container itself.</p>
 </section>
+<section id="setting-up-development-environment">
+<h3>Setting up development environment<a class="headerlink" href="#setting-up-development-environment" title="Link to this heading">¶</a></h3>
+<div class="admonition caution">
+<p class="admonition-title">Caution</p>
+<p>Never assume safety - assume that there is a production backlog of messages waiting to be processed! Don’t launch a test environment that consumes production data!</p>
+</div>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">deploy</span></code> Edit the constants at the top of the file (e.g. <code class="docutils literal notranslate"><span class="pre">arch_root</span></code>)</p></li>
+<li><dl class="simple">
+<dt>DAGS</dt><dd><ol class="arabic simple">
+<li><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">glacier_staging_to_sync.py</span></code></dt><dd><ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">download_map</span> <span class="pre">-</span> <span class="pre">edit</span> <span class="pre">out</span> <span class="pre">queues</span> <span class="pre">and</span> <span class="pre">regions</span> <span class="pre">you</span> <span class="pre">dont</span> <span class="pre">care</span> <span class="pre">about</span></code></p></li>
+</ol>
+</dd>
+</dl>
+</li>
+</ol>
+</dd>
+</dl>
+</li>
+</ol>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Never assume safety - assume that there is a production backlog of messages waiting to be processed! Don’t launch a test environment that consumes production data!</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">DEV|PROD</span> <span class="pre">CONFIG</span></code> code section. This contains defintions for everything that is different between DEV and PROD at runtime.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MY</span> <span class="pre">DB</span></code>  qa or prod</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DEBUG_DEV</span></code> This commented label appears in places where you want to, say, mock a return of a fixed message. When building a dev environment, its good to scan for occurrences and take the appropriate action.</p></li>
+</ol>
+</div></blockquote>
+</div>
+</section>
 </section>
 </section>
 
@@ -196,6 +230,7 @@ For now, just copy <code class="docutils literal notranslate"><span class="pre">
 <li><a class="reference internal" href="#what-is-actually-happening">What is actually happening</a><ul>
 <li><a class="reference internal" href="#retrying-when-there-is-no-data">Retrying when there is no data</a></li>
 <li><a class="reference internal" href="#using-a-bash-shell">Using a bash shell</a></li>
+<li><a class="reference internal" href="#setting-up-development-environment">Setting up development environment</a></li>
 </ul>
 </li>
 </ul>
