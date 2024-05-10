@@ -3,12 +3,19 @@
 Utilities for glacier staging
 """
 import pprint
-import sys
 from pathlib import Path
 import configparser
 import boto3
-import dateutil
 import pendulum
+from pprint import pp
+
+from sqlalchemy import desc
+
+# ------------------    CONST --------------------
+RUN_SECRETS: Path = Path("/run/secrets")
+
+
+# ------------------    /CONST --------------------
 
 
 # iterate over a list of classes and return if any of them satisfies the match_class function
@@ -22,6 +29,7 @@ def match_any_event_class(subject: str, event_classes: [str]) -> bool:
         if match_class(subject, class_):
             return True
     return False
+
 
 def match_class(subject: str, class_: str) -> bool:
     """
@@ -41,9 +49,8 @@ def match_class(subject: str, class_: str) -> bool:
 
     # If the first token of the subject matches the first token of the class, the subject matches the class
     return ((subject_tokens[0] == class_tokens[0])
-            and ( class_tokens[1] == '*'
-                  or subject_tokens[1] == class_tokens[1]))
-
+            and (class_tokens[1] == '*'
+                 or subject_tokens[1] == class_tokens[1]))
 
 
 def create_session(creds_section_name: str) -> boto3.Session:
@@ -56,21 +63,30 @@ def create_session(creds_section_name: str) -> boto3.Session:
     # Open a secrets file and pour it into a config object
     # if /run/secrets exists, it is a docker secret
     # Otherwise, just open from whatever the system is
-    ppfx: Path = Path("/run/secrets")
-    # DEBUG local - See ../airflow-docker/build-xxx
-    # ppfx: Path = Path("/Users/jimk/dev/ao-workflows/airflow-docker/.secrets")
-    if not Path.exists(ppfx):
+    if not Path.exists(RUN_SECRETS):
         print('No secrets found, using local credentials')
         ases = boto3.Session(profile_name=creds_section_name)
     else:
         print('using secrets')
         # See ../airflow-docker/docker-compose.yml
         #        creds_section = get_aws_credentials(Path('/run/secrets/aws'), creds_section_name)
-        creds_section = get_aws_credentials(ppfx / "aws", creds_section_name)
+        creds_section = get_aws_credentials(RUN_SECRETS / "aws", creds_section_name)
         ases = boto3.Session(aws_access_key_id=creds_section['aws_access_key_id'],
                              aws_secret_access_key=creds_section['aws_secret_access_key'],
                              region_name=creds_section['region_name'])
     return ases
+
+
+def get_db_config(prefix: str = 'prod') -> str:
+    """
+    Get the config path for db
+    :return:
+    """
+    if not Path.exists(RUN_SECRETS):
+        return f"{prefix}:~/.config/bdrc/db_apps.config"
+    else:
+        print('using secrets')
+        return f"{prefix}:/run/secrets/db_apps"
 
 
 def get_aws_credentials(cred_file: Path, section: str = 'default') -> {}:
@@ -92,16 +108,19 @@ def get_aws_credentials(cred_file: Path, section: str = 'default') -> {}:
     return _configParser[section]
 
 
-class DipOpCodes():
+class GlacierSyncOpCodes():
     RESTORED: int = 0
     DOWNLOADED: int = 1
     DEBAGGED: int = 2
     SYNCD: int = 3
 
-def db_phase(op_code: str, work_rid: str, user_data:{} = None):
+
+def db_phase(op_code: str, work_rid: str, user_data: {} = None):
     """
     record the operation in the progress db
-    :param record: work_rid: search term of item to updatekey
+    :param op_code: operation (See GlacierSyncOpCodes
+    :param work_rid: object to track
+    :param user_data: details of the operation
     """
     from GlacierSyncProgress import GlacierSyncProgress
     from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
@@ -110,41 +129,55 @@ def db_phase(op_code: str, work_rid: str, user_data:{} = None):
     op_time: pendulum.DateTime = pendulum.now()
 
     gsp: GlacierSyncProgress = GlacierSyncProgress()
-    gsp_found:bool = False
+    gsp_found: bool = False
 
-    with DrsContextBase() as drs:
-        gsp: GlacierSyncProgress
-        try:
-            gsp = drs.query(GlacierSyncProgress).filter(GlacierSyncProgress.work_rid == work_rid).one()
-            gsp_found = True
-        except NoResultFound:
+    with DrsDbContextBase(get_db_config('qa')) as drs:
+        sess = drs.get_session()
+
+        gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work_rid).order_by(
+            desc(GlacierSyncProgress.update_time)).first()
+        if not gsp:
             gsp = GlacierSyncProgress()
             gsp.object_name = work_rid
-            gsp.user_data = list(user_data)
-            drs.add(gsp)
-            drs.commit()
+            sess.add(gsp)
 
-        if op_code == DipOpCodes.RESTORED:
+        if op_code == GlacierSyncOpCodes.RESTORED:
             gsp.restore_complete_on = op_time
-        elif op_code == DipOpCodes.DOWNLOADED:
+        elif op_code == GlacierSyncOpCodes.DOWNLOADED:
             gsp.download_complete_on = op_time
-        elif op_code == DipOpCodes.DEBAGGED:
-            gsp.download_debagged_on = op_time
-        elif op_code == DipOpCodes.SYNCD:
+        elif op_code == GlacierSyncOpCodes.DEBAGGED:
+            gsp.debag_complete_on = op_time
+        elif op_code == GlacierSyncOpCodes.SYNCD:
             gsp.sync_complete_on = op_time
 
-        # Concatenate user data to existing, if given
-        if gsp_found and user_data:
-            gsp.phase_data = user_data
-        drs.commit()
+        # Concatenate user data to existing
+        gsp.update_user_data(op_time.to_rfc3339_string(), user_data)
+        sess.commit()
+
+
+def work_rid_from_aws_key(aws_key: str) -> str:
+    """
+    Extract the work_rid from an aws key
+    :param aws_key: aws key to extract from can be {parent/.../}*Work_rid.any.number.suffixes
+    :return: work_rid
+    """
+    basename: Path = Path(aws_key.split('/')[-1])
+    while basename.suffix:
+        basename = basename.with_suffix('')
+    return basename.name
 
 
 # DEBUG: Local
 if __name__ == '__main__':
     #     sqs = create_session('default').client('s3')
     #     print(sqs.list_buckets())
-    path_to_credentials = Path(sys.argv[1])
-    section = sys.argv[2] if len(sys.argv) > 2 else 'default'
-    o_section = get_aws_credentials(path_to_credentials, section)
-    for x in o_section.keys():
-        pprint.pprint(f"{section}[{x}]={o_section[x]}")
+    # path_to_credentials = Path(sys.argv[1])
+    # section = sys.argv[2] if len(sys.argv) > 2 else 'default'
+    # o_section = get_aws_credentials(path_to_credentials, section)
+    # for x in o_section.keys():
+    #     pprint.pprint(f"{section}[{x}]={o_section[x]}")
+
+    pp(work_rid_from_aws_key('freem/bladd/bla'))
+    pp(work_rid_from_aws_key('bla'))
+    pp(work_rid_from_aws_key('bla.goy.evitch'))
+    pp(work_rid_from_aws_key('s3:/lsdfsdf/bla.goy.evitch'))

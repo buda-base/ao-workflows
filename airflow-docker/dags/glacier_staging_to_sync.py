@@ -61,7 +61,6 @@ import os
 from pprint import pp
 import shutil
 import airflow.operators.bash
-from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
 
 from airflow import DAG
 from airflow.decorators import task
@@ -70,18 +69,10 @@ from datetime import datetime, timedelta
 from bdrc_bag import bag_ops
 from s3pathlib import S3Path
 from util_lib.version import bdrc_util_version
-from GlacierSyncProgress import GlacierSyncProgress
 
 from staging_utils import *
 
-
 #  ------------   local types----------------------------
-# create a datetime.tzinfo for local time zone
-def local_tz():
-    import pytz
-    return pytz.timezone('America/New_York')
-
-
 Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 'queue_name', 'config_section_name'])
 #  ------------   /local types----------------------------
 
@@ -91,21 +82,21 @@ Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 
 
 # Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
 
-DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
-PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
+_DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
+_PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
 
 #
 # DB for log_dip
-PROD_DB: str = 'prod'
-DEV_DB: str = 'qa'
+_PROD_DB: str = 'prod'
+_DEV_DB: str = 'qa'
 #
 # DAG parameters
-_DEV_DAG_SCHEDULE: timedelta = None
-_DEV_DAG_START_DATE: datetime = None
-_DEV_DAG_END_DATE: datetime = None
+_DEV_DAG_SCHEDULE: timedelta = timedelta(hours=1)
+_DEV_DAG_START_DATE: datetime = datetime(2024, 5, 10, 15, 22)
+_DEV_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 
 _PROD_DAG_SCHEDULE: timedelta = timedelta(hours=1)
-_PROD_DAG_START_DATE: datetime = datetime(2024, 4, 13, 1, 22)
+_PROD_DAG_START_DATE: datetime = datetime(2024, 5, 10, 17, 22)
 _PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 # ------------- CONFIG CONST  ----------------------------
 
@@ -115,11 +106,11 @@ UNGLACIERED_QUEUE_NAME: str = 'ManifestReadyToIntake'
 
 # See AWSIntake.setup-aws.py for the queue names
 # See 'deploy' for the config section names
-prod_download_map: [Download_Map] = [
+_PROD_DOWNLOAD_MAP: [Download_Map] = [
     Download_Map('ap-northeast-2', 'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake', 'ap_northeast'),
     Download_Map('ap-northeast-2', 'glacier.staging.nlm.bdrc.org', 'NlmReadyToIntake', 'ap_northeast'),
 ]
-dev_download_map: [Download_Map] = [
+_DEV_DOWNLOAD_MAP: [Download_Map] = [
     Download_Map('us-east-1', 'manifest.bdrc.org', UNGLACIERED_QUEUE_NAME, 'default')
 ]
 
@@ -136,14 +127,14 @@ REQUESTED_AWS_SECTIONS: [str] = ['default', 'ap_northeast']
 # --------------------- DEV|PROD CONFIG  ---------------
 # Loads the values set in MY_.....
 
-DAG_TIME_DELTA: timedelta = PROD_TIME_DELTA
-DAG_START_DATETIME = _PROD_DAG_START_DATE
-DAG_END_DATETIME = _PROD_DAG_END_DATE
+DAG_TIME_DELTA: timedelta = _DEV_TIME_DELTA
+DAG_START_DATETIME = _DEV_DAG_START_DATE
+DAG_END_DATETIME = _DEV_DAG_END_DATE
 
-MY_DB: str = PROD_DB
+MY_DB: str = _DEV_DB
 
-download_map: [Download_Map] =  dev_download_map
-# download_map: prod_download_map
+download_map: [Download_Map] = _DEV_DOWNLOAD_MAP
+
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 
@@ -448,11 +439,15 @@ def get_restored_object_messages():
                         records = message_body['Records']
                         msg_s3_records = [r for r in records if
                                           match_any_event_class(r.get("eventName"), REQUESTED_AWS_EVENTS)]
+                        # Add to log
+                        for m in msg_s3_records:
+                            work_rid: str = work_rid_from_aws_key( m['s3']['object']['key'])
+                            db_phase(GlacierSyncOpCodes.RESTORED, work_rid, user_data=m)
+
                         if msg_s3_records:
                             s3_records.extend(msg_s3_records)
                             pp(f"Added {len(records)}")
 
-                            # TODO: Add to log
                     else:
                         pp('No records in message')
 
@@ -461,11 +456,6 @@ def get_restored_object_messages():
                         QueueUrl=queue_url,
                         ReceiptHandle=receipt_handle
                     )
-
-                    with DrsDbContextBase() as conn:
-                        gsp: GlacierSyncProgress =  conn.get_or_create()
-
-
                 else:
                     pp('No messages to receive')
     finally:
@@ -522,7 +512,8 @@ def download_from_messages(s3_records) -> [str]:
             downloaded_paths.append(dfp_str)
             # Some exceptions, trigger retry
 
-            # TODO: Log downloaded
+            work_rid: str = work_rid_from_aws_key(key)
+            db_phase(GlacierSyncOpCodes.DOWNLOADED, work_rid, user_data={'download_path': dfp_str})
 
         except KeyError as e:
             err: str = f'KeyError: {e}'
@@ -582,6 +573,7 @@ def debag_downloads(downs: [str]) -> [str]:
             bag_path: Path = STAGING_PATH / "bags" / f"{work_name}.bag"
             pp(f"{work_name=} {db_down=} {bag_path=}")
             shutil.move(bag_path, db_down)
+            db_phase(GlacierSyncOpCodes.DEBAGGED, work_name, user_data={'debagged_path': db_down})
     return debagged
 
 
@@ -614,6 +606,8 @@ def sync_debagged(downs: [str], **context):
             bash_command=bash_command,
             env=env
         ).execute(context)
+
+        db_phase(GlacierSyncOpCodes.SYNCD, Path(download).stem, user_data={'synced_path': download})
 
 
 # Not used: but you could pass it in to DAG constructor
