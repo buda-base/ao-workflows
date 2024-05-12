@@ -169,6 +169,7 @@ def work_rid_from_aws_key(aws_key: str) -> str:
 
 # DEBUG: Local
 if __name__ == '__main__':
+    pass
     #     sqs = create_session('default').client('s3')
     #     print(sqs.list_buckets())
     # path_to_credentials = Path(sys.argv[1])
@@ -176,8 +177,8 @@ if __name__ == '__main__':
     # o_section = get_aws_credentials(path_to_credentials, section)
     # for x in o_section.keys():
     #     pprint.pprint(f"{section}[{x}]={o_section[x]}")
-
-    pp(work_rid_from_aws_key('freem/bladd/bla'))
-    pp(work_rid_from_aws_key('bla'))
-    pp(work_rid_from_aws_key('bla.goy.evitch'))
-    pp(work_rid_from_aws_key('s3:/lsdfsdf/bla.goy.evitch'))
+    #
+    # pp(work_rid_from_aws_key('freem/bladd/bla'))
+    # pp(work_rid_from_aws_key('bla'))
+    # pp(work_rid_from_aws_key('bla.goy.evitch'))
+    # pp(work_rid_from_aws_key('s3:/lsdfsdf/bla.goy.evitch'))
