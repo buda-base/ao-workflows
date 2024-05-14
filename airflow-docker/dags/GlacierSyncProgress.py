@@ -4,7 +4,7 @@ Model for tracking Glacier Sync process
 import random
 
 from BdrcDbLib.DbOrm.models.drs import TimestampMixin
-from sqlalchemy import Column, Integer, String, TIMESTAMP, JSON
+from sqlalchemy import Column, Integer, String, TIMESTAMP, JSON, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.declarative import declarative_base
@@ -67,9 +67,11 @@ class GlacierSyncProgress(Base, TimestampMixin):
 
 
 if __name__ == '__main__':
-    pass
     # Create the table
-    # xx: Engine = DrsDbContextBase.connect_db(bdrc_db_config=DrsDbContextBase.bdrc_db_conf)
-    # GlacierSyncProgress.__table__.drop(xx)
-    # GlacierSyncProgress.metadata.create_all(xx, checkfirst=True, tables=[GlacierSyncProgress().__table__])
+    with DrsDbContextBase(context_str='prodsa:~/.config/bdrc/db_apps.config') as ctx:
+        engine: Engine = ctx.get_engine()
+        inspector = inspect(engine)
+        if inspector.has_table(GlacierSyncProgress.__tablename__):
+            GlacierSyncProgress.__table__.drop(engine)
+        GlacierSyncProgress.metadata.create_all(engine, checkfirst=True, tables=[GlacierSyncProgress().__table__])
 
