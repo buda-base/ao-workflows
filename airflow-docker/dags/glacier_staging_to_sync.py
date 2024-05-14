@@ -92,7 +92,7 @@ _DEV_DB: str = 'qa'
 #
 # DAG parameters
 _DEV_DAG_SCHEDULE: timedelta = timedelta(hours=1)
-_DEV_DAG_START_DATE: datetime = datetime(2024, 5, 10, 15, 22)
+_DEV_DAG_START_DATE: datetime = datetime(2024, 5, 13, 15, 22)
 _DEV_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 
 _PROD_DAG_SCHEDULE: timedelta = timedelta(hours=1)
@@ -630,7 +630,9 @@ with DAG('sqs_scheduled_dag',
          end_date=DAG_END_DATETIME,
          tags=['bdrc'],
          catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
-         max_active_runs=4,
+         # DEBUG_DEV
+         max_active_runs=1,
+         # max_active_runs=4,
 
          # Note we don't want to specify a retries argument for each/all tasks in the DAG.
          # Except for the looking for SQS messages for retry: that should retry if there are no messages.
