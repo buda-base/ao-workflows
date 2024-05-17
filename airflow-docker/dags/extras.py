@@ -10,7 +10,6 @@ from time import sleep
 
 import boto3
 import pendulum
-from tqdm import tqdm
 
 from GlacierSyncProgress import GlacierSyncProgress
 from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
@@ -88,7 +87,7 @@ def add_works_to_project():
             # Open a csv reader from f
             # read each line and add it to the GlacierSyncProgress table
             sess = drs.get_session()
-            for row in tqdm(csvr):
+            for row in csvr:
                 work = row[0]
                 aws_s3_bucket = row[1]
                 aws_s3_key = row[2]
