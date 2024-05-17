@@ -131,7 +131,7 @@ def db_phase(op_code: str, work_rid: str, user_data: {} = None):
     gsp: GlacierSyncProgress = GlacierSyncProgress()
     gsp_found: bool = False
 
-    with DrsDbContextBase(get_db_config('qa')) as drs:
+    with DrsDbContextBase(get_db_config('prod')) as drs:
         sess = drs.get_session()
 
         gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work_rid).order_by(

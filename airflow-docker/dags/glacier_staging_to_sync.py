@@ -631,8 +631,8 @@ with DAG('sqs_scheduled_dag',
          tags=['bdrc'],
          catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
          # DEBUG_DEV
-         max_active_runs=1,
-         # max_active_runs=4,
+         # max_active_runs=1,
+         max_active_runs=4,
 
          # Note we don't want to specify a retries argument for each/all tasks in the DAG.
          # Except for the looking for SQS messages for retry: that should retry if there are no messages.
