@@ -96,7 +96,7 @@ _DEV_DAG_START_DATE: datetime = datetime(2024, 5, 13, 15, 22)
 _DEV_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 
 _PROD_DAG_SCHEDULE: timedelta = timedelta(hours=1)
-_PROD_DAG_START_DATE: datetime = datetime(2024, 5, 10, 17, 22)
+_PROD_DAG_START_DATE: datetime = datetime(2024, 5, 15, 13, 22)
 _PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 # ------------- CONFIG CONST  ----------------------------
 
@@ -127,13 +127,13 @@ REQUESTED_AWS_SECTIONS: [str] = ['default', 'ap_northeast']
 # --------------------- DEV|PROD CONFIG  ---------------
 # Loads the values set in MY_.....
 
-DAG_TIME_DELTA: timedelta = _DEV_TIME_DELTA
-DAG_START_DATETIME = _DEV_DAG_START_DATE
-DAG_END_DATETIME = _DEV_DAG_END_DATE
+DAG_TIME_DELTA: timedelta = _PROD_TIME_DELTA
+DAG_START_DATETIME = _PROD_DAG_START_DATE
+DAG_END_DATETIME = _PROD_DAG_END_DATE
 
-MY_DB: str = _DEV_DB
+MY_DB: str = _PROD_DB
 
-download_map: [Download_Map] = _DEV_DOWNLOAD_MAP
+download_map: [Download_Map] = _PROD_DOWNLOAD_MAP
 
 
 # --------------------- /DEV|PROD CONFIG  ---------------

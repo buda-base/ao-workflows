@@ -28,9 +28,9 @@ _DEV_ARCH_ROOT=.
 # ------------------ / CONFIG CONSTANTS ------------------
 
 # ------------------ DEV|PROD CONFIG ------------------
-ARCH_ROOT=$_DEV_ARCH_ROOT
+ARCH_ROOT=$_PROD_ARCH_ROOT
 
-SYNC_ACCESS_UID=$_DEV_SYNC_ACCESS_UID
+SYNC_ACCESS_UID=$_PROD_SYNC_ACCESS_UID
 # ------------------ /DEV|PROD CONFIG ------------------
 
 function usage() {
