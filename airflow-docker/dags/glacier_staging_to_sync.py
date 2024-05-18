@@ -58,7 +58,6 @@ import collections
 import json
 import os
 
-from pprint import pp
 import shutil
 import airflow.operators.bash
 
@@ -67,7 +66,6 @@ from airflow.decorators import task
 from airflow.exceptions import AirflowFailException, AirflowException
 from datetime import datetime, timedelta
 from bdrc_bag import bag_ops
-from s3pathlib import S3Path
 from util_lib.version import bdrc_util_version
 
 from staging_utils import *
@@ -82,8 +80,6 @@ Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 
 
 # Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
 
-_DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
-_PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
 
 #
 # DB for log_dip
@@ -91,13 +87,20 @@ _PROD_DB: str = 'prod'
 _DEV_DB: str = 'qa'
 #
 # DAG parameters
-_DEV_DAG_SCHEDULE: timedelta = timedelta(hours=1)
+
+_DEV_TIME_SCHEDULE: timedelta =  timedelta(minutes=15)
 _DEV_DAG_START_DATE: datetime = datetime(2024, 5, 13, 15, 22)
 _DEV_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 
-_PROD_DAG_SCHEDULE: timedelta = timedelta(minutes=10)
-_PROD_DAG_START_DATE: datetime = datetime(2024, 5, 15, 13, 22)
+
+_PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
+_PROD_DAG_START_DATE: datetime = datetime(2024, 5, 18, 17, 22)
 _PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
+
+# Sync parameters
+_DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp" )
+_PROD_DEST_PATH_ROOT: str = "/mnt"
+
 # ------------- CONFIG CONST  ----------------------------
 
 # region ------------   CONST  ----------------------------
@@ -127,13 +130,19 @@ REQUESTED_AWS_SECTIONS: [str] = ['default', 'ap_northeast']
 # --------------------- DEV|PROD CONFIG  ---------------
 # Loads the values set in MY_.....
 
-DAG_TIME_DELTA: timedelta = _PROD_TIME_DELTA
+DAG_TIME_DELTA: timedelta = _PROD_TIME_SCHEDULE
 DAG_START_DATETIME = _PROD_DAG_START_DATE
 DAG_END_DATETIME = _PROD_DAG_END_DATE
-
 MY_DB: str = _PROD_DB
-
 download_map: [Download_Map] = _PROD_DOWNLOAD_MAP
+MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
+
+# DAG_TIME_DELTA: timedelta = _DEV_TIME_SCHEDULE
+# DAG_START_DATETIME = _DEV_DAG_START_DATE
+# DAG_END_DATETIME = _DEV_DAG_END_DATE
+# MY_DB: str = _DEV_DB
+# download_map: [Download_Map] = _DEV_DOWNLOAD_MAP
+# MY_DEST_PATH_ROOT: str = _DEV_DEST_PATH_ROOT
 
 
 # --------------------- /DEV|PROD CONFIG  ---------------
@@ -162,7 +171,7 @@ os.makedirs(STAGING_PATH, exist_ok=True)
 APP_LOG_ROOT = Path.home() / "bdrc" / "log"
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
-DEST_PATH: Path = Path("/mnt", "Archive")
+DEST_PATH: Path = Path(MY_DEST_PATH_ROOT, "Archive")
 # Non docker
 _DB_CONFIG: Path = Path.home() / ".config" / "bdrc" / "db_apps.config" if not Path.exists(
     Path("/run/secrets/db_apps")) else Path("/run/secrets/db_apps")
@@ -176,95 +185,6 @@ try:
     util_ver: str = bdrc_util_version()
 except:
     util_ver = "Unknown"
-
-# -----------------  mocks for testing / debugging ------------------------
-# Set up this copy for mock objects, because debagging is destructive
-# removed - just set a bag zip file in AWS s3 and set up mock_message to get it
-# mock_downloads: [str] = [
-#     str(shutil.copy(BASE_PATH / "save-W1FPL2251.bag.zip", DOWNLOAD_PATH / "miniW1FPL2251.bag.zip"))]
-
-mock_message: [] = [
-    dict(
-        {
-            "eventVersion": "2.1",
-            "eventSource": "aws:s3",
-            "awsRegion": "ap-northeast-2",
-            "eventTime": "2024-04-06T00:11:23.730Z",
-            "eventName": "ObjectRestore:Completed",
-            "userIdentity": {
-                "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"
-            },
-            "requestParameters": {
-                "sourceIPAddress": "s3.amazonaws.com"
-            },
-            "responseElements": {
-                "x-amz-request-id": "439897F6741FD9BA",
-                "x-amz-id-2": "MF0oW9le+g8K5/R/uUks1QuFbZxNuSmZDWQ5utu8ZTcHEKSGFHzdFBEtebICzrPtG3YL1YVmffxhRw4nDPTZ1w=="
-            },
-            "s3": {
-                "s3SchemaVersion": "1.0",
-                "configurationId": "BagCreatedNotification",
-                "bucket": {
-                    "name": "glacier.staging.nlm.bdrc.org",
-                    "ownerIdentity": {
-                        "principalId": "A1JPP2WW1ZYN4F"
-                    },
-                    "arn": "arn:aws:s3:::glacier.staging.nlm.bdrc.org"
-                },
-                "object": {
-                    "key": "Archive0/00/W1NLM4700/W1NLM4700.bag.zip",
-                    "size": 17017201852,
-                    "eTag": "41654cbd2a8f2d3c0abc83444fde825b-2029",
-                    "sequencer": "00638792A45B638391"
-                }
-            },
-            "glacierEventData": {
-                "restoreEventData": {
-                    "lifecycleRestorationExpiryTime": "2024-04-12T00:00:00.000Z",
-                    "lifecycleRestoreStorageClass": "DEEP_ARCHIVE"
-                }
-            }
-        }
-    )]
-
-mock_message1: [] = [
-    dict(eventVersion="2.1", eventSource="aws:s3", awsRegion="us-east-1", eventTime="2024-02-24T08:47:18.267Z",
-         eventName="ObjectRestore:Completed", userIdentity={
-            "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"},
-         requestParameters={
-             "sourceIPAddress": "s3.amazonaws.com"
-         },
-         responseElements={
-             "x-amz-request-id": "6E5A5E04B1CFFAC5",
-             "x-amz-id-2": "Tt/6gfwuhCu9X06urpzaVuNBhSv4EW47BlmS2WrViVZ+MNDLo/ckEgLqLGi02IV6L3vshvP++ps1iPp9Zl3tPQ=="
-         },
-         s3={
-             "s3SchemaVersion": "1.0",
-             "configurationId": "MGU5Zjk3MzItMjQ4Yi00MTU0LTk4ZGItNDBjYjU1MzhjMGU3",
-             "bucket": {
-                 "name": "manifest.bdrc.org",
-                 "ownerIdentity": {
-                     "principalId": "A1JPP2WW1ZYN4F"
-                 },
-                 "arn": "arn:aws:s3:::manifest.bdrc.org"
-             },
-             "object": {
-                 "key": "ao1060/W1FPL2251.bag.zip",
-                 "size": 78668981,
-                 "eTag": "405202973fc17c6f4b26cb56022c6201-10",
-                 "versionId": "vwfO4VqvGTlWeuSAtXDOhPzFhl.6YrSG",
-                 "sequencer": "0065C3D18445E403D5"
-             }
-         },
-         glacierEventData={
-             "restoreEventData": {
-                 "lifecycleRestorationExpiryTime": "2024-03-06T00:00:00.000Z",
-                 "lifecycleRestoreStorageClass": "DEEP_ARCHIVE"
-             }
-         }
-         )
-]
-
 
 #  ----------------------   utils  -------------------------
 
@@ -442,7 +362,7 @@ def get_restored_object_messages():
                         # Add to log
                         for m in msg_s3_records:
                             work_rid: str = work_rid_from_aws_key( m['s3']['object']['key'])
-                            db_phase(GlacierSyncOpCodes.RESTORED, work_rid, user_data=m)
+                            db_phase(GlacierSyncOpCodes.RESTORED, work_rid, db_config=MY_DB, user_data=m)
 
                         if msg_s3_records:
                             s3_records.extend(msg_s3_records)
@@ -513,7 +433,7 @@ def download_from_messages(s3_records) -> [str]:
             # Some exceptions, trigger retry
 
             work_rid: str = work_rid_from_aws_key(key)
-            db_phase(GlacierSyncOpCodes.DOWNLOADED, work_rid, user_data={'download_path': dfp_str})
+            db_phase(GlacierSyncOpCodes.DOWNLOADED, work_rid,   db_config=MY_DB, user_data={'download_path': dfp_str})
 
         except KeyError as e:
             err: str = f'KeyError: {e}'
@@ -525,6 +445,7 @@ def download_from_messages(s3_records) -> [str]:
             raise ValueError(err)
         # General exception fails
         except:
+            import sys
             ei = sys.exc_info()
             pp(ei)
             raise AirflowFailException(str(ei[1]))
@@ -573,7 +494,7 @@ def debag_downloads(downs: [str]) -> [str]:
             bag_path: Path = STAGING_PATH / "bags" / f"{work_name}.bag"
             pp(f"{work_name=} {db_down=} {bag_path=}")
             shutil.move(bag_path, db_down)
-            db_phase(GlacierSyncOpCodes.DEBAGGED, work_name, user_data={'debagged_path': db_down})
+            db_phase(GlacierSyncOpCodes.DEBAGGED, work_name,  db_config=MY_DB, user_data={'debagged_path': db_down})
     return debagged
 
 
@@ -601,13 +522,18 @@ def sync_debagged(downs: [str], **context):
         exit $rc
         """
 
+
         airflow.operators.bash.BashOperator(
             task_id="sync_debag",
             bash_command=bash_command,
             env=env
         ).execute(context)
 
-        db_phase(GlacierSyncOpCodes.SYNCD, Path(download).stem, user_data={'synced_path': download})
+        # If we got here, the sync succeeded, otherwise, the task raised "fail"
+        # jimk ao-workflows-24: remove the sync source
+        shutil.rmtree(download)
+
+        db_phase(GlacierSyncOpCodes.SYNCD, Path(download).stem,   db_config=MY_DB, user_data={'synced_path': download})
 
 
 # Not used: but you could pass it in to DAG constructor

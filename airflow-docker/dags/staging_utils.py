@@ -115,11 +115,12 @@ class GlacierSyncOpCodes():
     SYNCD: int = 3
 
 
-def db_phase(op_code: str, work_rid: str, user_data: {} = None):
+def db_phase(op_code: str, work_rid: str,  db_config: str, user_data: {} = None) -> None:
     """
     record the operation in the progress db
     :param op_code: operation (See GlacierSyncOpCodes
     :param work_rid: object to track
+    :param db_config: database
     :param user_data: details of the operation
     """
     from GlacierSyncProgress import GlacierSyncProgress
@@ -131,7 +132,7 @@ def db_phase(op_code: str, work_rid: str, user_data: {} = None):
     gsp: GlacierSyncProgress = GlacierSyncProgress()
     gsp_found: bool = False
 
-    with DrsDbContextBase(get_db_config('prod')) as drs:
+    with DrsDbContextBase(get_db_config(db_config)) as drs:
         sess = drs.get_session()
 
         gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work_rid).order_by(
@@ -165,6 +166,96 @@ def work_rid_from_aws_key(aws_key: str) -> str:
     while basename.suffix:
         basename = basename.with_suffix('')
     return basename.name
+
+
+
+# -----------------  mocks for testing / debugging ------------------------
+# Set up this copy for mock objects, because debagging is destructive
+# removed - just set a bag zip file in AWS s3 and set up mock_message to get it
+# mock_downloads: [str] = [
+#     str(shutil.copy(BASE_PATH / "save-W1FPL2251.bag.zip", DOWNLOAD_PATH / "miniW1FPL2251.bag.zip"))]
+
+mock_message: [] = [
+    dict(
+        {
+            "eventVersion": "2.1",
+            "eventSource": "aws:s3",
+            "awsRegion": "ap-northeast-2",
+            "eventTime": "2024-04-06T00:11:23.730Z",
+            "eventName": "ObjectRestore:Completed",
+            "userIdentity": {
+                "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"
+            },
+            "requestParameters": {
+                "sourceIPAddress": "s3.amazonaws.com"
+            },
+            "responseElements": {
+                "x-amz-request-id": "439897F6741FD9BA",
+                "x-amz-id-2": "MF0oW9le+g8K5/R/uUks1QuFbZxNuSmZDWQ5utu8ZTcHEKSGFHzdFBEtebICzrPtG3YL1YVmffxhRw4nDPTZ1w=="
+            },
+            "s3": {
+                "s3SchemaVersion": "1.0",
+                "configurationId": "BagCreatedNotification",
+                "bucket": {
+                    "name": "glacier.staging.nlm.bdrc.org",
+                    "ownerIdentity": {
+                        "principalId": "A1JPP2WW1ZYN4F"
+                    },
+                    "arn": "arn:aws:s3:::glacier.staging.nlm.bdrc.org"
+                },
+                "object": {
+                    "key": "Archive0/00/W1NLM4700/W1NLM4700.bag.zip",
+                    "size": 17017201852,
+                    "eTag": "41654cbd2a8f2d3c0abc83444fde825b-2029",
+                    "sequencer": "00638792A45B638391"
+                }
+            },
+            "glacierEventData": {
+                "restoreEventData": {
+                    "lifecycleRestorationExpiryTime": "2024-04-12T00:00:00.000Z",
+                    "lifecycleRestoreStorageClass": "DEEP_ARCHIVE"
+                }
+            }
+        }
+    )]
+
+mock_message1: [] = [
+    dict(eventVersion="2.1", eventSource="aws:s3", awsRegion="us-east-1", eventTime="2024-02-24T08:47:18.267Z",
+         eventName="ObjectRestore:Completed", userIdentity={
+            "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"},
+         requestParameters={
+             "sourceIPAddress": "s3.amazonaws.com"
+         },
+         responseElements={
+             "x-amz-request-id": "6E5A5E04B1CFFAC5",
+             "x-amz-id-2": "Tt/6gfwuhCu9X06urpzaVuNBhSv4EW47BlmS2WrViVZ+MNDLo/ckEgLqLGi02IV6L3vshvP++ps1iPp9Zl3tPQ=="
+         },
+         s3={
+             "s3SchemaVersion": "1.0",
+             "configurationId": "MGU5Zjk3MzItMjQ4Yi00MTU0LTk4ZGItNDBjYjU1MzhjMGU3",
+             "bucket": {
+                 "name": "manifest.bdrc.org",
+                 "ownerIdentity": {
+                     "principalId": "A1JPP2WW1ZYN4F"
+                 },
+                 "arn": "arn:aws:s3:::manifest.bdrc.org"
+             },
+             "object": {
+                 "key": "ao1060/W1FPL2251.bag.zip",
+                 "size": 78668981,
+                 "eTag": "405202973fc17c6f4b26cb56022c6201-10",
+                 "versionId": "vwfO4VqvGTlWeuSAtXDOhPzFhl.6YrSG",
+                 "sequencer": "0065C3D18445E403D5"
+             }
+         },
+         glacierEventData={
+             "restoreEventData": {
+                 "lifecycleRestorationExpiryTime": "2024-03-06T00:00:00.000Z",
+                 "lifecycleRestoreStorageClass": "DEEP_ARCHIVE"
+             }
+         }
+         )
+]
 
 
 # DEBUG: Local
