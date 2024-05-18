@@ -3,7 +3,8 @@ These are outside of the dags. These are one-time routines that use GlacierSyncP
 """
 import argparse
 import csv
-from tqdm import tqdm
+# dont add to docker
+# from tqdm import tqdm
 from time import sleep
 
 import boto3
@@ -111,7 +112,7 @@ def launch_restore_request():
         csvr = csv.reader(f)
         with DrsDbContextBase('prodcli:~/.config/bdrc/db_apps.config') as drs:
             sess = drs.get_session()
-            for row in tqdm(csvr, total=100):
+            for row in csvr:
                 work = row[0]
                 gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
                                                              ).filter(GlacierSyncProgress.restore_requested_on == None).one()
