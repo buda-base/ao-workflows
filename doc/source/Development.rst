@@ -4,6 +4,27 @@ BDRC Airflow Development
 
 This document contains details of the different elements of ``airflow-docker`` and how their elements relate.
 
+Quick take - building test host
+================================
+
+This section is a quick checklist of how to build a test environment, and what to put back when you are done.
+It requires knowledge in the rest of this documentation, and is only here to make it easy for the forgetful to find.
+
+#. DAG code
+
+    #. ``airflow-docker/dags/glacier_staging_to_sync.py``
+
+        #. ``DEV|PROD CONFIG`` code section. This contains defintions for everything that is different between DEV and PROD at runtime. Use the DEV or PROD variants of the variables, that are defined in the CONST CONFIG code section.
+
+        #. ``DEBUG_DEV`` This commented label appears in places where you want to, say, mock a return of a fixed message. When building a dev environment, its good to scan for occurrences and take the appropriate action.
+
+
+#. Deployment
+
+    #. ``airflow-docker/deploy``
+
+        #. Edit the constants at the top of the file (e.g. ``ARCH_ROOT``)
+
 Architecture of this module
 ===========================
 
