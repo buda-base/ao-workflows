@@ -95,7 +95,7 @@ _DEV_DAG_SCHEDULE: timedelta = timedelta(hours=1)
 _DEV_DAG_START_DATE: datetime = datetime(2024, 5, 13, 15, 22)
 _DEV_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 
-_PROD_DAG_SCHEDULE: timedelta = timedelta(hours=1)
+_PROD_DAG_SCHEDULE: timedelta = timedelta(minutes=10)
 _PROD_DAG_START_DATE: datetime = datetime(2024, 5, 15, 13, 22)
 _PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 # ------------- CONFIG CONST  ----------------------------
