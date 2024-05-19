@@ -93,7 +93,7 @@ _DEV_DAG_START_DATE: datetime = datetime(2024, 5, 13, 15, 22)
 _DEV_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 
 
-_PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
+_PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=8)
 _PROD_DAG_START_DATE: datetime = datetime(2024, 5, 18, 17, 22)
 _PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
 
