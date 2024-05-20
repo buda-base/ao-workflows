@@ -101,6 +101,7 @@ def add_works_to_project():
                     iadd = 0
 
 
+# TODO: Get n unrestored, don't get from list
 def launch_restore_request():
     ap = argparse.ArgumentParser()
     ap.add_argument('work_list', help='a csv file with no header, containing a list of work RIDs to restore',
