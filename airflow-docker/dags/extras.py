@@ -3,6 +3,8 @@ These are outside of the dags. These are one-time routines that use GlacierSyncP
 """
 import argparse
 import csv
+from datetime import  timedelta
+from pprint import pp
 # dont add to docker
 # from tqdm import tqdm
 from time import sleep
@@ -14,8 +16,13 @@ from GlacierSyncProgress import GlacierSyncProgress
 from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
 from sqlalchemy.orm.exc import NoResultFound
 
+# -----------------     CONST  -----------------
+# Number of days to restore
+RESTORE_DAY_COUNT: int = 5
+SAFETY_FACTOR: float = 0.8
+# -----------------     /CONST -----------------
 
-def make_a_glacier_sync_progress():
+def _make_a_glacier_sync_progress():
     """
     Strictly for first article testing. No use in production
     :return:
@@ -44,7 +51,7 @@ def make_a_glacier_sync_progress():
         sess.commit()
 
 
-def glacier_sync_catchup():
+def _glacier_sync_catchup():
     """
     Transform all the syncs done by airflow into GlacierSyncProgress records
     :return:
@@ -101,6 +108,36 @@ def add_works_to_project():
                     iadd = 0
 
 
+# Calculate from GlacierSyncProgress records the number of syncs we perform per day, using SqlAlchemy GroupBy
+def calculate_syncs_per_day_groupby():
+    from sqlalchemy import func
+    syncs_per_day = 0.0
+    with DrsDbContextBase('prodcli:~/.config/bdrc/db_apps.config') as drs:
+        sess = drs.get_session()
+        result = sess.query(func.date(GlacierSyncProgress.sync_complete_on), func.count(GlacierSyncProgress.sync_complete_on)) \
+            .group_by(func.date(GlacierSyncProgress.sync_complete_on)) \
+            .all()
+        for day, count in result:
+            pp(f"{day=}: {count=}")
+        sum_second_elements = sum([t[1] for t in result])
+        syncs_per_day = (sum_second_elements  / len(result))
+    return syncs_per_day
+
+
+def launch_restore_requests(days_to_refill:int):
+    """
+    Make sure there are enough restores to process calculate_syncs_per_day_groupby() * days_to_refill
+    do this by getting:
+    - the number of items with no restore_requested_on
+    - the number of
+    :param days_to_refill:
+    :return:
+    """
+
+    average_count: float = calculate_syncs_per_day_groupby()
+    total_to_restore = int(average_count * (RESTORE_DAY_COUNT /ntimes_per_day_called)  * SAFETY_FACTOR)
+
+
 # TODO: Get n unrestored, don't get from list
 def launch_restore_request():
     ap = argparse.ArgumentParser()
@@ -115,38 +152,59 @@ def launch_restore_request():
             sess = drs.get_session()
             for row in csvr:
                 work = row[0]
-                gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
-                                                             ).filter(GlacierSyncProgress.restore_requested_on == None).one()
-                _aws_path_data = gsp.user_data
-
-                # The user data we're looking for is:
-                # [
-                #   {'user_data':
-                #       {'aws_s3_key': 'Archive0/00/W1FPL11000/W1FPL11000.bag.zip', 'aws_s3_bucket': 'glacier.staging.fpl.bdrc.org'},
-                #    'time_stamp': '2024-05-13T15:25:56.717146-04:00'
-                #    }
-                # ]
-
-                get_user_data = lambda k, data: [b['user_data'][k] for b in data if k in b['user_data']][0]
-                aws_s3_bucket = get_user_data('aws_s3_bucket', gsp.user_data)
-                aws_s3_key = get_user_data('aws_s3_key', gsp.user_data)
-
-                from botocore.exceptions import ClientError
-                try:
-                    restore_data = s3.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key, RestoreRequest={'Days': 5,
-                                                                                         'GlacierJobParameters': {
-                                                                                             'Tier': 'Standard'}})
-                    gsp.restore_requested_on = pendulum.now()
-                    gsp.update_user_data(pendulum.now().to_rfc3339_string(), {'restore_request_results': restore_data})
-                    sess.commit()
-                except ClientError as e:
-                    if e.response['Error']['Code'] == 'RestoreAlreadyInProgress':
-                        print(f"{work} restore already in progress. Skipping and continuing")
-                    else:
-                        raise e
+                launch_one_request(s3, RESTORE_DAY_COUNT, sess, work)
 
 
+def launch_one_request(work: str, restore_len: int, s3: object = None, sess = None):
+    """
+    :param work: work to restore
+    :param restore_len: number of days to restore
+    :param s3: boto client
+    :param sess: s3 session
+    :return:
+    """
+    gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
+                                                 ).filter(GlacierSyncProgress.restore_requested_on == None).one()
+    _aws_path_data = gsp.user_data
+    # The user data we're looking for is:
+    # [
+    #   {'user_data':
+    #       {'aws_s3_key': 'Archive0/00/W1FPL11000/W1FPL11000.bag.zip', 'aws_s3_bucket': 'glacier.staging.fpl.bdrc.org'},
+    #    'time_stamp': '2024-05-13T15:25:56.717146-04:00'
+    #    }
+    # ]
+    get_user_data = lambda k, data: [b['user_data'][k] for b in data if k in b['user_data']][0]
+    aws_s3_bucket = get_user_data('aws_s3_bucket', gsp.user_data)
+    aws_s3_key = get_user_data('aws_s3_key', gsp.user_data)
+    from botocore.exceptions import ClientError
+    try:
+        restore_data = s3.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key, RestoreRequest={'Days': restore_len,
+                                                                                               'GlacierJobParameters': {
+                                                                                                   'Tier': 'Standard'}})
+        gsp.restore_requested_on = pendulum.now()
+        gsp.update_user_data(pendulum.now().to_rfc3339_string(), {'restore_request_results': restore_data})
+        sess.commit()
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'RestoreAlreadyInProgress':
+            print(f"{work} restore already in progress. Skipping and continuing")
+        else:
+            raise e
+
+# calculate the number of timedelta objects in a day
+def times_per_day(time_delta: timedelta):
+    """
+    Calculate the number of timedeltas in a day
+    :return:
+    """
+
+    # 1 day in seconds
+    seconds_per_day = 24 * 60 * 60
+    n_deltas = seconds_per_day /  time_delta.total_seconds()
+    return n_deltas
 
 if __name__ == '__main__':
     # add_works_to_project()
-    launch_restore_request()
+    # launch_restore_request()
+    # calculate the number of pendulum timedelta objects in a day
+    pp(f"5 hours {times_per_day(timedelta(hours=5))}")
+
