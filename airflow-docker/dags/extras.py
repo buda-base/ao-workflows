@@ -115,35 +115,40 @@ def launch_restore_request():
             sess = drs.get_session()
             for row in csvr:
                 work = row[0]
-                gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
-                                                             ).filter(GlacierSyncProgress.restore_requested_on == None).one()
-                _aws_path_data = gsp.user_data
-
-                # The user data we're looking for is:
-                # [
-                #   {'user_data':
-                #       {'aws_s3_key': 'Archive0/00/W1FPL11000/W1FPL11000.bag.zip', 'aws_s3_bucket': 'glacier.staging.fpl.bdrc.org'},
-                #    'time_stamp': '2024-05-13T15:25:56.717146-04:00'
-                #    }
-                # ]
-
-                get_user_data = lambda k, data: [b['user_data'][k] for b in data if k in b['user_data']][0]
-                aws_s3_bucket = get_user_data('aws_s3_bucket', gsp.user_data)
-                aws_s3_key = get_user_data('aws_s3_key', gsp.user_data)
-
-                from botocore.exceptions import ClientError
                 try:
-                    restore_data = s3.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key, RestoreRequest={'Days': 5,
-                                                                                         'GlacierJobParameters': {
-                                                                                             'Tier': 'Standard'}})
-                    gsp.restore_requested_on = pendulum.now()
-                    gsp.update_user_data(pendulum.now().to_rfc3339_string(), {'restore_request_results': restore_data})
-                    sess.commit()
-                except ClientError as e:
-                    if e.response['Error']['Code'] == 'RestoreAlreadyInProgress':
-                        print(f"{work} restore already in progress. Skipping and continuing")
-                    else:
-                        raise e
+                    gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
+                                                                 ).filter(GlacierSyncProgress.restore_requested_on == None).one()
+                    _aws_path_data = gsp.user_data
+
+                    # The user data we're looking for is:
+                    # [
+                    #   {'user_data':
+                    #       {'aws_s3_key': 'Archive0/00/W1FPL11000/W1FPL11000.bag.zip', 'aws_s3_bucket': 'glacier.staging.fpl.bdrc.org'},
+                    #    'time_stamp': '2024-05-13T15:25:56.717146-04:00'
+                    #    }
+                    # ]
+
+                    get_user_data = lambda k, data: [b['user_data'][k] for b in data if k in b['user_data']][0]
+                    aws_s3_bucket = get_user_data('aws_s3_bucket', gsp.user_data)
+                    aws_s3_key = get_user_data('aws_s3_key', gsp.user_data)
+
+                    # jimk: raise days to 14, which is how long the notification persists
+                    from botocore.exceptions import ClientError
+                    try:
+                        restore_data = s3.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key, RestoreRequest={'Days': 14,
+                                                                                             'GlacierJobParameters': {
+                                                                                                 'Tier': 'Standard'}})
+                        gsp.restore_requested_on = pendulum.now()
+                        gsp.update_user_data(pendulum.now().to_rfc3339_string(), {'restore_request_results': restore_data})
+                        sess.commit()
+                    except ClientError as e:
+                        if e.response['Error']['Code'] == 'RestoreAlreadyInProgress':
+                            print(f"{work} restore already in progress. Skipping and continuing")
+                        else:
+                            raise e
+                except NoResultFound:
+                    print(f"{work} not found or already requested in GlacierSyncProgress")
+                    continue
 
 
 
