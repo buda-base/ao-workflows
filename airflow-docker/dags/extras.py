@@ -3,12 +3,14 @@ These are outside of the dags. These are one-time routines that use GlacierSyncP
 """
 import argparse
 import csv
+from pprint import pp
 # dont add to docker
 # from tqdm import tqdm
 from time import sleep
 
 import boto3
 import pendulum
+from sqlalchemy_get_or_create import get_or_create
 
 from GlacierSyncProgress import GlacierSyncProgress
 from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
@@ -81,11 +83,11 @@ def add_works_to_project():
     args = ap.parse_args()
     with args.work_list as f:
         csvr = csv.reader(f)
-        with DrsDbContextBase('prodsa:~/.config/bdrc/db_apps.config') as drs:
+        with DrsDbContextBase('qa:~/.config/bdrc/db_apps.config') as drs:
             sess = drs.get_session()
+
             # Open a csv reader from f
             # read each line and add it to the GlacierSyncProgress table
-            sess = drs.get_session()
             for row in csvr:
                 work = row[0]
                 aws_s3_bucket = row[1]
@@ -101,6 +103,37 @@ def add_works_to_project():
                     iadd = 0
 
 
+def get_gsp(object_name: str, drs_session) -> GlacierSyncProgress:
+    """
+    retrieve or create a GlacierSyncProgress record
+    :param object_name:
+    :param drs_session: drs db context session
+    :return: newly created or existing record.
+    """
+
+    #
+    # required to construct, might not be given in input
+    defaults = {"user_data": [{}]}
+    o, newly_made = get_or_create(drs_session, GlacierSyncProgress, defaults, object_name=object_name)
+    if newly_made:
+        pp(f"Newly made {object_name}")
+        pp(o)
+        drs_session.commit()
+    return o
+
+
+def get_user_data(k: str, data: [] ) -> str:
+    """
+    get user data for a key, if it exists
+    :param k: search key
+    :param data: list of dicts
+    :return:
+    """
+    _user_data = lambda k, data: [b['user_data'][k] for b in data if k in b['user_data']]
+    _ud = _user_data(k, data)
+    return _ud[0] if _ud else ""
+
+
 # TODO: Get n unrestored, don't get from list
 def launch_restore_request():
     ap = argparse.ArgumentParser()
@@ -111,14 +144,22 @@ def launch_restore_request():
     s3 = boto3.client('s3')
     with args.work_list as f:
         csvr = csv.reader(f)
-        with DrsDbContextBase('prodcli:~/.config/bdrc/db_apps.config') as drs:
+        with DrsDbContextBase('qa:~/.config/bdrc/db_apps.config') as drs:
             sess = drs.get_session()
             for row in csvr:
                 work = row[0]
                 try:
-                    gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
-                                                                 ).filter(GlacierSyncProgress.restore_requested_on == None).one()
+                    gsp = get_gsp(work, sess)
+                    # gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
+                    #                                              ).filter(
+                    #     GlacierSyncProgress.restore_requested_on == None).one()
                     _aws_path_data = gsp.user_data
+
+                    if len(_aws_path_data) == 1 and not _aws_path_data[0]:
+                        pp(f"{work} has no aws path data. Skipping")
+                        pp(gsp,indent=4, sort_dicts=True, width=80)
+                        continue
+
 
                     # The user data we're looking for is:
                     # [
@@ -128,18 +169,25 @@ def launch_restore_request():
                     #    }
                     # ]
 
-                    get_user_data = lambda k, data: [b['user_data'][k] for b in data if k in b['user_data']][0]
+
                     aws_s3_bucket = get_user_data('aws_s3_bucket', gsp.user_data)
                     aws_s3_key = get_user_data('aws_s3_key', gsp.user_data)
+
+                    if not aws_s3_bucket or not aws_s3_key:
+                        pp(f"{work} has no aws path data. Skipping")
+                        pp(gsp.user_data,indent=4, sort_dicts=True, width=80)
+                        continue
 
                     # jimk: raise days to 14, which is how long the notification persists
                     from botocore.exceptions import ClientError
                     try:
-                        restore_data = s3.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key, RestoreRequest={'Days': 14,
-                                                                                             'GlacierJobParameters': {
-                                                                                                 'Tier': 'Standard'}})
+                        restore_data = s3.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key,
+                                                         RestoreRequest={'Days': 14,
+                                                                         'GlacierJobParameters': {
+                                                                             'Tier': 'Standard'}})
                         gsp.restore_requested_on = pendulum.now()
-                        gsp.update_user_data(pendulum.now().to_rfc3339_string(), {'restore_request_results': restore_data})
+                        gsp.update_user_data(pendulum.now().to_rfc3339_string(),
+                                             {'restore_request_results': restore_data})
                         sess.commit()
                     except ClientError as e:
                         if e.response['Error']['Code'] == 'RestoreAlreadyInProgress':
@@ -149,7 +197,6 @@ def launch_restore_request():
                 except NoResultFound:
                     print(f"{work} not found or already requested in GlacierSyncProgress")
                     continue
-
 
 
 if __name__ == '__main__':
