@@ -92,7 +92,8 @@ def add_works_to_project():
                 work = row[0]
                 aws_s3_bucket = row[1]
                 aws_s3_key = row[2]
-                gsp = drs.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work).one()
+                # gsp = drs.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work).one()
+                gsp = get_gsp(work, sess)
                 _aws_path_data = gsp.user_data
                 gsp.update_user_data(pendulum.now().to_rfc3339_string(),
                                      {'aws_s3_bucket': aws_s3_bucket, 'aws_s3_key': aws_s3_key})
@@ -122,7 +123,7 @@ def get_gsp(object_name: str, drs_session) -> GlacierSyncProgress:
     return o
 
 
-def get_user_data(k: str, data: [] ) -> str:
+def get_user_data(k: str, data: []) -> str:
     """
     get user data for a key, if it exists
     :param k: search key
@@ -132,6 +133,62 @@ def get_user_data(k: str, data: [] ) -> str:
     _user_data = lambda k, data: [b['user_data'][k] for b in data if k in b['user_data']]
     _ud = _user_data(k, data)
     return _ud[0] if _ud else ""
+
+
+def work_restore_request(gsp_object_key: str, db_session: object, s3_client: boto3.client):
+    """
+    Do one work restore request, with handling
+    :param gsp_object_key:
+    :param db_session:
+    :param s3_client:
+    :return:
+    """
+    try:
+        gsp = get_gsp(gsp_object_key, db_session)
+        # gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
+        #                                              ).filter(
+        #     GlacierSyncProgress.restore_requested_on == None).one()
+        _aws_path_data = gsp.user_data
+
+        if len(_aws_path_data) == 1 and not _aws_path_data[0]:
+            pp(f"{gsp_object_key} has no aws path data. Skipping")
+            pp(gsp, indent=4, sort_dicts=True, width=80)
+            return
+
+        # The user data we're looking for is:
+        # [
+        #   {'user_data':
+        #       {'aws_s3_key': 'Archive0/00/W1FPL11000/W1FPL11000.bag.zip', 'aws_s3_bucket': 'glacier.staging.fpl.bdrc.org'},
+        #    'time_stamp': '2024-05-13T15:25:56.717146-04:00'
+        #    }
+        # ]
+
+        aws_s3_bucket = get_user_data('aws_s3_bucket', gsp.user_data)
+        aws_s3_key = get_user_data('aws_s3_key', gsp.user_data)
+
+        if not aws_s3_bucket or not aws_s3_key:
+            pp(f"{gsp_object_key} has no aws path data. Skipping")
+            pp(gsp.user_data, indent=4, sort_dicts=True, width=80)
+            return
+
+        # jimk: raise days to 14, which is how long the notification persists
+        from botocore.exceptions import ClientError
+        try:
+            restore_data = s3_client.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key,
+                                                    RestoreRequest={'Days': 14,
+                                                             'GlacierJobParameters': {
+                                                                 'Tier': 'Standard'}})
+            gsp.restore_requested_on = pendulum.now()
+            gsp.update_user_data(pendulum.now().to_rfc3339_string(),
+                                 {'restore_request_results': restore_data})
+            db_session.commit()
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'RestoreAlreadyInProgress':
+                print(f"{gsp_object_key} restore already in progress. Skipping and continuing")
+            else:
+                raise e
+    except NoResultFound:
+        print(f"{gsp_object_key} not found or already requested in GlacierSyncProgress")
 
 
 # TODO: Get n unrestored, don't get from list
@@ -148,55 +205,7 @@ def launch_restore_request():
             sess = drs.get_session()
             for row in csvr:
                 work = row[0]
-                try:
-                    gsp = get_gsp(work, sess)
-                    # gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.object_name == work
-                    #                                              ).filter(
-                    #     GlacierSyncProgress.restore_requested_on == None).one()
-                    _aws_path_data = gsp.user_data
 
-                    if len(_aws_path_data) == 1 and not _aws_path_data[0]:
-                        pp(f"{work} has no aws path data. Skipping")
-                        pp(gsp,indent=4, sort_dicts=True, width=80)
-                        continue
-
-
-                    # The user data we're looking for is:
-                    # [
-                    #   {'user_data':
-                    #       {'aws_s3_key': 'Archive0/00/W1FPL11000/W1FPL11000.bag.zip', 'aws_s3_bucket': 'glacier.staging.fpl.bdrc.org'},
-                    #    'time_stamp': '2024-05-13T15:25:56.717146-04:00'
-                    #    }
-                    # ]
-
-
-                    aws_s3_bucket = get_user_data('aws_s3_bucket', gsp.user_data)
-                    aws_s3_key = get_user_data('aws_s3_key', gsp.user_data)
-
-                    if not aws_s3_bucket or not aws_s3_key:
-                        pp(f"{work} has no aws path data. Skipping")
-                        pp(gsp.user_data,indent=4, sort_dicts=True, width=80)
-                        continue
-
-                    # jimk: raise days to 14, which is how long the notification persists
-                    from botocore.exceptions import ClientError
-                    try:
-                        restore_data = s3.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key,
-                                                         RestoreRequest={'Days': 14,
-                                                                         'GlacierJobParameters': {
-                                                                             'Tier': 'Standard'}})
-                        gsp.restore_requested_on = pendulum.now()
-                        gsp.update_user_data(pendulum.now().to_rfc3339_string(),
-                                             {'restore_request_results': restore_data})
-                        sess.commit()
-                    except ClientError as e:
-                        if e.response['Error']['Code'] == 'RestoreAlreadyInProgress':
-                            print(f"{work} restore already in progress. Skipping and continuing")
-                        else:
-                            raise e
-                except NoResultFound:
-                    print(f"{work} not found or already requested in GlacierSyncProgress")
-                    continue
 
 
 if __name__ == '__main__':

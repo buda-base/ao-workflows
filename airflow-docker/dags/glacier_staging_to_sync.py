@@ -66,6 +66,7 @@ from airflow.decorators import task
 from airflow.exceptions import AirflowFailException, AirflowException
 from datetime import datetime, timedelta
 from bdrc_bag import bag_ops
+from botocore.exceptions import ClientError
 from util_lib.version import bdrc_util_version
 
 from staging_utils import *
@@ -389,6 +390,19 @@ def get_restored_object_messages():
     return s3_records
 
 
+
+def send_retry_if(bucket: str, key: str, e: ClientError):
+    """
+    :param bucket:
+    :param key:
+    :param specific Exception
+    :return:
+    """
+    error_code = e.response['Error']['Code']
+    if error_code == 'InvalidObjectState':
+        print("Caught an InvalidObjectState error")
+
+
 @task
 def download_from_messages(s3_records) -> [str]:
     """
@@ -440,8 +454,10 @@ def download_from_messages(s3_records) -> [str]:
             pp(err)
             raise ValueError(err)
         except ClientError as e:
-            err: str = f"Could not retrieve S3://{bucket}/{key}:  {e} "
+            err = f"Could not retrieve S3://{bucket}/{key}:"
             pp(err)
+            pp(e)
+            send_retry_if(bucket, key)
             raise ValueError(err)
         # General exception fails
         except:
