@@ -10,7 +10,9 @@ from time import sleep
 
 import boto3
 import pendulum
-from sqlalchemy_get_or_create import get_or_create
+from sqlalchemy import true
+from sqlalchemy.future import Engine
+from BdrcDbLib.SqlAlchemy_get_or_create import get_or_create
 
 from GlacierSyncProgress import GlacierSyncProgress
 from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
@@ -176,9 +178,10 @@ def work_restore_request(gsp_object_key: str, db_session: object, s3_client: bot
         try:
             restore_data = s3_client.restore_object(Bucket=aws_s3_bucket, Key=aws_s3_key,
                                                     RestoreRequest={'Days': 14,
-                                                             'GlacierJobParameters': {
-                                                                 'Tier': 'Standard'}})
+                                                                    'GlacierJobParameters': {
+                                                                        'Tier': 'Standard'}})
             gsp.restore_requested_on = pendulum.now()
+            gsp.restore_complete_on = None
             gsp.update_user_data(pendulum.now().to_rfc3339_string(),
                                  {'restore_request_results': restore_data})
             db_session.commit()
@@ -191,8 +194,75 @@ def work_restore_request(gsp_object_key: str, db_session: object, s3_client: bot
         print(f"{gsp_object_key} not found or already requested in GlacierSyncProgress")
 
 
-# TODO: Get n unrestored, don't get from list
+def get_unbegun_fpl_two_ups(engine: Engine, n_get: int):
+    """
+    Get the two up work rids for FPL
+    :param engine:
+    :param db_session:
+    :return:
+    """
+    # sql = """
+    # select distinct work_rid from work where work_rid like 'W1FPL2%' order by work_rid
+    # """
+    # with engine.connect() as conn:
+    #     res = conn.execute(sql)
+    #     for row in res:
+    #         print(row[0])
+
+    from sqlalchemy import MetaData, Table, select, or_, and_
+    from sqlalchemy.dialects import mysql
+    metadata = MetaData()
+
+    with engine.connect() as connection:
+        table = Table('glacier_sync_progress', metadata, autoload_with=engine)
+
+        stmt = select(table.c.object_name).where((table.c.object_name.op('REGEXP')('W1FPL2[8-9].*')
+                                   | table.c.object_name.op('REGEXP')('W1FPL3[0-7].*'))
+                                   & (table.c.restore_requested_on.is_(None) )
+                                   ).limit(n_get)
+        print(stmt.compile(dialect=mysql.dialect()))
+        result = connection.execute(stmt)
+        outr:[] = []
+        for row in result:
+            outr.append(row[0])
+        return outr
+
+
+
+# find GlacierSyncProgress records that have not had their restore requested
+def unbegun_restore_requests():
+    """
+    Emits restore requests for a number of GlacierSyncProgress records in -n/--num-restores
+    :return:
+    """
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-n', '--num-restores',
+                    help='number of works to restore (should be processable in 14 days)',
+                    type=int, default=10)
+    args = ap.parse_args()
+    s3 = boto3.client('s3')
+    with DrsDbContextBase('testprod:~/.config/bdrc/db_unit_test.config') as drs:
+        sess = drs.get_session()
+
+        # this stanza gets them all
+        # gsp = sess.query(GlacierSyncProgress).filter(GlacierSyncProgress.restore_requested_on == None).limit(
+        #     args.num_restores)
+        # for g in gsp:
+        #     print(g.object_name)
+        works_to_restore:[] = get_unbegun_fpl_two_ups(drs.get_engine(), args.num_restores)
+        # from functools import partial
+        # emit_restore_work = partial(work_restore_request, db_session=sess, s3_client=s3)
+        # result = map(emit_restore_work, works_to_restore)
+        # pp(result)
+        for work in works_to_restore:
+            work_restore_request(work, sess, s3)
+
+
 def launch_restore_request():
+    """
+    Get n unrestored from args --work_list file, don't get from list
+    :return:
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument('work_list', help='a csv file with no header, containing a list of work RIDs to restore',
                     type=argparse.FileType('r'))
@@ -201,13 +271,31 @@ def launch_restore_request():
     s3 = boto3.client('s3')
     with args.work_list as f:
         csvr = csv.reader(f)
-        with DrsDbContextBase('qa:~/.config/bdrc/db_apps.config') as drs:
+        with DrsDbContextBase('prodsa:~/.config/bdrc/db_apps.config') as drs:
             sess = drs.get_session()
             for row in csvr:
                 work = row[0]
+                work_restore_request(work, sess, s3)
 
 
+def launch_restore_on_command():
+    """
+    Get specific works from the command line 'extras.py W1FPL28000 W1FPL28001 ...'
+    :return:
+    """
+    ap = argparse.ArgumentParser()
+    ap.add_argument('work_list', help='space separated list of work RIDs to restore',
+                    type=str, nargs='+')
+
+    args = ap.parse_args()
+    s3 = boto3.client('s3')
+    with DrsDbContextBase('prodsa:~/.config/bdrc/db_apps.config') as drs:
+        sess = drs.get_session()
+        for work in args.work_list:
+            work_restore_request(work, sess, s3)
 
 if __name__ == '__main__':
     # add_works_to_project()
-    launch_restore_request()
+    # launch_restore_request()
+    unbegun_restore_requests()
+    # launch_restore_on_command()
