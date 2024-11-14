@@ -1,9 +1,9 @@
-dagster==1.0.4
+# dagster~=0.14.0
+dagster
 apache-airflow~=2.8.3
 apache-airflow-providers-amazon
 internetarchive~=3.0.2
 -r airflow-docker/StagingGlacierProcess-requirements.txt
-
 SQLAlchemy~=1.4.51
 pendulum~=3.0.0
 pytest~=8.0.1
