@@ -25,13 +25,12 @@ _DEV_SYNC_ACCESS_UID=5000
 
 _PROD_ARCH_ROOT=
 _DEV_ARCH_ROOT=.
+
+# Defaults - overriden by the -g --debug flag
+MY_ARCH_ROOT="${_PROD_ARCH_ROOT}"
+MY_SYNC_ACCESS_UID="${_PROD_SYNC_ACCESS_UID}"
 # ------------------ / CONFIG CONSTANTS ------------------
 
-# ------------------ DEV|PROD CONFIG ------------------
-ARCH_ROOT=$_PROD_ARCH_ROOT
-
-SYNC_ACCESS_UID=$_PROD_SYNC_ACCESS_UID
-# ------------------ /DEV|PROD CONFIG ------------------
 
 function usage() {
   echo "Usage: ${ME} [-h|--help] -s|--source <source-dir> -d|--dest <deploy-dir> [-i|--init-env <deploy-dir>]"
@@ -59,7 +58,7 @@ init_test_env() {
   chmod -R 777 ${1}/AO-staging-Incoming
 }
 
-OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env -- "$@")
+OPTIONS=$(getopt -o ghs:d:i: --long help,source,dest,init-env -- "$@")
 
 while true; do # Parse command line options
   case "$1" in
@@ -75,6 +74,11 @@ while true; do # Parse command line options
     init_home=${2?"No archival parent directory given."}
     init_test_env $2
     exit $?
+    ;;
+  -g | --debug)
+    MY_ARCH_ROOT="${_DEV_ARCH_ROOT}"
+    MY_SYNC_ACCESS_UID="${_DEV_SYNC_ACCESS_UID}"
+    shift 1
     ;;
   -h | --help)
     usage
@@ -98,17 +102,23 @@ fi
 
 if [[ ! -d $DEPLOY ]]; then
   mkdir $DEPLOY
+  echo -n "Creating $DEPLOY..."
   # jimk aow-14 - add sync logs
   for DD in "$DEPLOY/dags" "$DEPLOY/logs"  "$DEPLOY/plugins" "$DEPLOY/processing" "$DEPLOY/processing/logs" "$DEPLOY/AO-staging-Incoming/bag-download" ; do
     mkdir -p $DD
+    echo -n $DD ...
     chmod 777 $DD
   done
+  echo "."
 fi
+
+ARCH_ROOT=$MY_ARCH_ROOT
+SYNC_ACCESS_UID=$_PROD_SYNC_ACCESS_UID
 
 log_echo docker-compose
 cp $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
 log_echo dags
-cp -r $SRC/dags ${DEPLOY}
+cp -rv $SRC/dags ${DEPLOY}
 
 # Borrowed from bdrc-docker.sh
 export SECRETS=$DEPLOY/.docker-secrets
@@ -124,7 +134,7 @@ log_echo aws-others
 ./extract-section.pl ~/.aws/credentials ap_northeast >> ${SECRETS}/aws-credentials || exit 1
 # chmod u-w "${SECRETS}"
 
-log_echo .env
+log_echo ${DEPLOY}/.env
 cat <<EOF >$DEPLOY/.env
 SECRETS=.docker-secrets
 # hush run-time warnings of build environments

@@ -65,7 +65,7 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowFailException, AirflowException
 from datetime import datetime, timedelta
-from bdrc_bag import bag_ops
+from bag import bag_ops
 from botocore.exceptions import ClientError
 from util_lib.version import bdrc_util_version
 
@@ -78,10 +78,9 @@ Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 
 
 # -------------  CONFIG CONST  ----------------------------
 
+BAG_ZIP_PATTERN="*.bag.zip"
 
 # Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
-
-
 #
 # DB for log_dip
 _PROD_DB: str = 'prod'
@@ -89,14 +88,16 @@ _DEV_DB: str = 'qa'
 #
 # DAG parameters
 
-_DEV_TIME_SCHEDULE: timedelta =  timedelta(minutes=15)
-_DEV_DAG_START_DATE: datetime = datetime(2024, 5, 13, 15, 22)
-_DEV_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
+_DEV_TIME_SCHEDULE: timedelta =  timedelta(hours=6)
+_DEV_DAG_START_DATE: datetime = datetime(2024, 11, 12, 11, 15)
+_DEV_DAG_END_DATE: datetime = datetime(2024, 12, 8, hour=23)
+_DEV_DL_PER_DAG=5
 
 
-_PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=8)
+_PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
 _PROD_DAG_START_DATE: datetime = datetime(2024, 5, 18, 17, 22)
 _PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
+_PROD_DL_PER_DAG=15
 
 # Sync parameters
 _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp" )
@@ -130,21 +131,25 @@ REQUESTED_AWS_SECTIONS: [str] = ['default', 'ap_northeast']
 
 # --------------------- DEV|PROD CONFIG  ---------------
 # Loads the values set in MY_.....
-
+# Of course, you do not want to call side-effect inducing functions in setting this
+# See the dev section below
 DAG_TIME_DELTA: timedelta = _PROD_TIME_SCHEDULE
 DAG_START_DATETIME = _PROD_DAG_START_DATE
 DAG_END_DATETIME = _PROD_DAG_END_DATE
 MY_DB: str = _PROD_DB
 download_map: [Download_Map] = _PROD_DOWNLOAD_MAP
 MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
+MY_DL_PER_DAG = _PROD_DL_PER_DAG
 
-# DAG_TIME_DELTA: timedelta = _DEV_TIME_SCHEDULE
-# DAG_START_DATETIME = _DEV_DAG_START_DATE
-# DAG_END_DATETIME = _DEV_DAG_END_DATE
-# MY_DB: str = _DEV_DB
-# download_map: [Download_Map] = _DEV_DOWNLOAD_MAP
-# MY_DEST_PATH_ROOT: str = _DEV_DEST_PATH_ROOT
 
+DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
+DAG_START_DATETIME = _DEV_DAG_START_DATE
+DAG_END_DATETIME = _DEV_DAG_END_DATE
+MY_DB = _DEV_DB
+download_map = _DEV_DOWNLOAD_MAP
+# OK tp leave local - $ARCH_ROOT in the .env makes this safe
+# MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
+MY_DL_PER_DAG = _DEV_DL_PER_DAG
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 
@@ -473,6 +478,24 @@ def download_from_messages(s3_records) -> [str]:
 
 
 @task
+def get_downloads() -> [str]:
+    """
+    Get the list of paths that are ready to debag
+    :return:
+    """
+    import fnmatch
+    # For proof of concept, just use hardwired dir
+    matches = []
+    pattern = "*.bag.zip"
+    pp(f"Looking for {pattern} in {DOWNLOAD_PATH}")
+    for root, dirnames, filenames in os.walk(DOWNLOAD_PATH):
+        pp(f"{root=} {dirnames=} {filenames=}")
+        for filename in fnmatch.filter(filenames, BAG_ZIP_PATTERN):
+            matches.append(os.path.join(root, filename))
+    return matches[:MY_DL_PER_DAG]
+
+
+@task
 def debag_downloads(downs: [str]) -> [str]:
     """
     Debags each unload
@@ -533,6 +556,7 @@ def sync_debagged(downs: [str], **context):
         # The moustaches {{}} inject a literal, not an fString resolution
         bash_command = f"""
         #!/usr/bin/env bash
+        ls -l /mnt
         syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{download}" 2>&1 | tee $syncLogDateTimeFile
         rc=${{PIPESTATUS[0]}}
         exit $rc
@@ -591,7 +615,31 @@ with DAG('sqs_scheduled_dag',
     to_sync = debag_downloads(downloads)
     sync_debagged(to_sync)
 
+with DAG('down_scheduled_dag',
+         schedule=DAG_TIME_DELTA,
+         start_date=DAG_START_DATETIME,
+         end_date=DAG_END_DATETIME,
+         tags=['bdrc'],
+         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+         # DEBUG_DEV
+         # max_active_runs=1,
+         # This kills when rsyncing
+         # max_active_runs=4,
+         max_active_runs=4
+
+
+         # Note we don't want to specify a retries argument for each/all tasks in the DAG.
+         # Except for the looking for SQS messages for retry: that should retry if there are no messages.
+         #
+         # retries = 5,
+         # retry_delay = timedelta(hours=6)
+
+         ) as dl_dag:
+    downloads = get_downloads()
+    to_sync = debag_downloads(downloads)
+    sync_debagged(to_sync)
+
 if __name__ == '__main__':
     # noinspection PyArgumentList
-    sync_dag.test()
+    dl_dag.test()
     # gs_dag.cli()
