@@ -8,7 +8,8 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+# Sphinx creates a build dir we want to use.
+# build/
 develop-eggs/
 dist/
 downloads/
@@ -69,6 +70,7 @@ instance/
 .scrapy
 
 # Sphinx documentation
+# But keep docs/build
 docs/_build/
 
 # PyBuilder
