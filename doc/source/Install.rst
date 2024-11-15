@@ -34,7 +34,8 @@ You can get this running from a typical development workstation, which is set up
 - run ``docker-compose up -d``
 - end the run with ``docker-compose down`` (in the ``--dest`` directory)
 
-After a few minutes, open up a browser to localhost:8089 (admin/admin)
+
+A few minutes after the ``-run`` command, open up a browser to *host*:8089 (admin/admin)
 
 .. warning::
 
@@ -61,11 +62,34 @@ You need to rebuild the base airflow image when anything **except** the DAGs cha
 - the sync script (``archive-ops/scripts/syncAnywhere/syncOneWork.sh``, or its python dependencies
 - the audit tool user properties changes.
 - Different bind mounts change.
+- Differens user account to run under
 
 There may be other cases where you need to rebuild the base airflow image.
 
 Operations
 ----------
+
+Development and Production Images
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+There are only two components that determine whether the installation is a "production" or a "development" installation. All of these components should be changed together. First, it is crucial to recognize that the container image is **not** one of those components. The container image contains only third-party infrastructure, and some BDRC code. The BDRC code is production/testing agnostic. Its runtime environment is completely defined in the ``DAG`` that invokes it. (See below)
+
+In general, the pattern to define separate dev and prod configs is:
+
+..code-block:: bash
+
+    export _PROD_ARCH_ROOT=/mnt/Archive1
+    export _DEV_ARCH_ROOT=.
+
+    ARCH_ROOT="${_PROD_ARCH_ROOT}"
+    # ARCH_ROOT="${_DEV_ARCH_ROOT}"
+
+Where you define the ``_PROD_XXX`` and ``_DEV_XX`` variants, and then set the ``XXX`` variable to the appropriate value. This pattern is used in the ``deploy`` script. In some areas, ``XXX`` is defined as ``MY_XXX``.
+
+The two components are:
+
+:``airflow-docker/deploy``: ``SYNC_ACCESS_UID`` This is the **host** userid under which the **scheduler** (the airflow container that does the work) runs under. This is important for write access to the archives. The default ``5000`` is for testing, but you want ``service`` for the production. ``ARCH_ROOT`` enables you to set the top level root for the airflow environment. This is critical when launching the container. As you can see in ``deploy`` it is **UNSET** in production.
+
+:``airflow-docker/dags/glacier_staging_to_sync.py``: The only dev/prod variable here is the DB which receives updates. This DB value is also passed to the sync process through the DAG. You update it by replacing the python file in the container while the container image is running.
 
 Building an image
 ^^^^^^^^^^^^^^^^^
@@ -73,6 +97,7 @@ Building an image
 - Git pull ``buda-base/ao-workflows`` into ``WORKFLOW_DEV_DIR``.
 - Git pull ``buda-base/archive-ops`` into ``AO_DEV_DIR``.
 - Start the Desktop Docker (or the docker daemon on Linux)
+- Navigate to *pull root*``/ao-workflows/airflow-docker``
 - run `bdrc-docker.sh` with your choice of options:
 
 .. code-block:: bash
@@ -123,7 +148,7 @@ the ``.`` in ``./logs`` is the ``--dest`` directory of the ``deploy`` command.
       -d|--dest <deploy-dir>: deployment directory
       -i|--init-env <deploy-dir>: initialize test environment AFTER creating it with --s and --d
 
-the ``-i|--init-env`` is used standalone to build an empty tree of the RS archive for testing.
+the ``-i|--init-env`` is used standalone to build an empty tree of the RS archive for **testing** .
 You need to manually reference its output in the bdrc-docker-compose.yaml scheduler:volumes:
 The ``scheduler`` service executes the airflow DAGS, and manages the logs. Therefore,
 it is the service that needs access to the host platform. The ``deploy`` script
