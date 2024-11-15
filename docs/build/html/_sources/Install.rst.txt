@@ -13,13 +13,14 @@ so it must contain all the DAG's dependencies (except airflow itself)
 
 Definitions
 -----------
+
 :host: The physical machine that the docker containers run on  (real world). in a docker compose ``volumes`` stanza, this is the left hand side of the colon. In a ``secrets:`` stanza, it's the terminal node.
 
 :container: The docker container that is running.
 
 :bind mount: in a docker compose ``volumes`` stanza, this is the right hand side of the colon. Ex: ``./logs:/opt/airflow/logs`` In this expression, ``.logs`` is the *host* directory, and ``/opt/airflow/logs`` is the *container* directory
 
-Please refer to :ref:`docker-concepts` below for a quick introduction to the docker concepts most relevant to this project. A deeper dive is count in :doc:`Development.rst`
+Please refer to :ref:`docker-concepts` below for a quick introduction to the docker concepts most relevant to this project. A deeper dive is count in :doc:`Development`
 
 
 TL,DR: Quickstart
@@ -37,8 +38,7 @@ After a few minutes, open up a browser to localhost:8089 (admin/admin)
 
 .. warning::
 
-    Do not activate the ``sqs_scheduled_dag``in the Web UI. If you do that, works may not be sync'd.  See :ref:`Development.rst` for the DAG fuctionality.
-
+    Do not activate the ``sqs_scheduled_dag`` in the Web UI. If you do that, works may not be sync\'d.  See :doc:`Development` for the DAG functionality.
 
 airflow-docker project architecture
 ===================================
@@ -169,6 +169,7 @@ This section contains summaries of the scripts that run the docker environment.
             - syncAnywhere script library
             - syncAnywhere python dependencies
             - DAG code needs new Python dependencies
+
         - creating new volumes in the image.
 
 #.  ``deploy`` creates  or updates a docker compose container from the image and other environmental variables. The  the runtime environment. If you are simply updating the code in a DAG, you can simply run ``deploy`` against the running container.

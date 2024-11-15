@@ -32,7 +32,8 @@ def create_sqs_queue(queue_name, sqs: boto3.client = boto3.client('sqs')) -> str
     """
 
     # Create an SQS queue
-    response = sqs.create_queue(QueueName=queue_name)
+    response = sqs.create_queue(QueueName=queue_name,
+                                Attributes={ 'MessageRetentionPeriod': '1209600'})
 
     # Get the SQS queue URL
     queue_url = response['QueueUrl']

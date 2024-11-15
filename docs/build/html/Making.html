@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Making this doc &#8212; AO Workflows  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="_static/classic.css?v=514cf933" />
+    
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="BDRC Airflow Development" href="Development.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="Development.html" title="BDRC Airflow Development"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">AO Workflows  documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Making this doc</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="making-this-doc">
+<h1>Making this doc<a class="headerlink" href="#making-this-doc" title="Link to this heading">¶</a></h1>
+<p>Learning ReST, Sphinx, and the GitHub page system required many visits to Github Copilot, as Rest+Sphinx is not a native fit on Github yet.</p>
+<p>These sites were useful starting points and guideposts:</p>
+<section id="get-sphinx">
+<h2>Get Sphinx<a class="headerlink" href="#get-sphinx" title="Link to this heading">¶</a></h2>
+<p><a class="reference external" href="https://www.sphinx-doc.org/en/master/tutorial/getting-started.html">Get Sphinx</a></p>
+</section>
+<section id="configure-ao-workflows-repo-for-githubpages">
+<h2>Configure AO Workflows repo for GitHubPages<a class="headerlink" href="#configure-ao-workflows-repo-for-githubpages" title="Link to this heading">¶</a></h2>
+<p>Go to the <a class="reference external" href="https://github.com/buda-base/ao-workflows/settings/pages">AO Workflows | Settings | Pages</a> (you can find this in the repo’s settings left nav bar as shown)</p>
+<img alt="_images/GitHubPagesSettings.png" src="_images/GitHubPagesSettings.png" />
+<p>and set the
+<em>branch</em> to <code class="docutils literal notranslate"><span class="pre">gh-pages</span></code> and the <code class="docutils literal notranslate"><span class="pre">source</span></code> to <code class="docutils literal notranslate"><span class="pre">docs/</span></code>, as shown above.</p>
+<p>This creates a Github action that will build the pages when the <cite>gh-branch</cite> is pushed to. See</p>
+<p>Then, simply fetch the <code class="docutils literal notranslate"><span class="pre">gh-pages</span></code> branch, and work in it.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Before beginning work, update the <cite>gh-pages</cite> branch from main. If future developers enable the code documentation, this will help keep the documentation up to date.</p>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Open this project</span>
+<span class="nb">cd</span><span class="w"> </span>docs
+git<span class="w"> </span>checkout<span class="w"> </span>gh-pages
+</pre></div>
+</div>
+</section>
+<section id="build">
+<h2>Build<a class="headerlink" href="#build" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>pull<span class="w"> </span>origin<span class="w"> </span>gh-pages
+<span class="c1"># Bring in any doc changes</span>
+git<span class="w"> </span>merge<span class="w"> </span>main<span class="w"> </span>gh-pages
+<span class="c1"># Make the docs</span>
+./make.sh
+</pre></div>
+</div>
+</section>
+<section id="other-targets">
+<h2>Other targets<a class="headerlink" href="#other-targets" title="Link to this heading">¶</a></h2>
+<p>There are other useful dedicated targets for <code class="docutils literal notranslate"><span class="pre">make.sh</span></code></p>
+<dl class="field-list simple">
+<dt class="field-odd">build<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The default, builds the html, and runs the <code class="docutils literal notranslate"><span class="pre">Makefile</span></code> target <code class="docutils literal notranslate"><span class="pre">copy-files</span></code> which places the build output where Github pages can find it: in the <code class="docutils literal notranslate"><span class="pre">docs/</span></code> directory.</p>
+</dd>
+<dt class="field-even">clean<span class="colon">:</span></dt>
+<dd class="field-even"><p>Removes the build directory</p>
+</dd>
+<dt class="field-odd">clean_build<span class="colon">:</span></dt>
+<dd class="field-odd"><p>the <code class="docutils literal notranslate"><span class="pre">build</span></code> target copies a lot of stuff into the <code class="docutils literal notranslate"><span class="pre">docs/</span></code> directory. This removes it. Not necessary, but sometimes helpful.</p>
+</dd>
+</dl>
+</section>
+<section id="review">
+<h2>Review<a class="headerlink" href="#review" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># open the generated html in your browser</span>
+open<span class="w"> </span>build/html/index.html
+</pre></div>
+</div>
+</section>
+<section id="commit">
+<h2>Commit<a class="headerlink" href="#commit" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>commit
+git<span class="w"> </span>push<span class="w"> </span><span class="o">[</span>origin<span class="o">]</span><span class="w"> </span><span class="o">[</span>gh-pages<span class="o">]</span>
+</pre></div>
+</div>
+</section>
+<section id="review-github-progress">
+<h2>Review Github progress<a class="headerlink" href="#review-github-progress" title="Link to this heading">¶</a></h2>
+<p>In the <strong>Actions</strong> tab, of the <cite>AO Workflows</cite> repo, you can you can monitor the progress of the build. See :ref:_build-progress for more information.</p>
+<p>If the run succeeds, the pages build and deployment link,</p>
+<img alt="_images/pages-build-and-deployment.png" src="_images/pages-build-and-deployment.png" />
+<p>will take you to a results page:</p>
+<img alt="_images/deployment.png" src="_images/deployment.png" />
+<p>which has a <a class="reference external" href="https://buda-base.github.io/ao-workflows">link to the deployed pages</a> that you can link to.</p>
+<p>.</p>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <div>
+    <h3><a href="index.html">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">Making this doc</a><ul>
+<li><a class="reference internal" href="#get-sphinx">Get Sphinx</a></li>
+<li><a class="reference internal" href="#configure-ao-workflows-repo-for-githubpages">Configure AO Workflows repo for GitHubPages</a></li>
+<li><a class="reference internal" href="#build">Build</a></li>
+<li><a class="reference internal" href="#other-targets">Other targets</a></li>
+<li><a class="reference internal" href="#review">Review</a></li>
+<li><a class="reference internal" href="#commit">Commit</a></li>
+<li><a class="reference internal" href="#review-github-progress">Review Github progress</a></li>
+</ul>
+</li>
+</ul>
+
+  </div>
+  <div>
+    <h4>Previous topic</h4>
+    <p class="topless"><a href="Development.html"
+                          title="previous chapter">BDRC Airflow Development</a></p>
+  </div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/Making.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="Development.html" title="BDRC Airflow Development"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">AO Workflows  documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">Making this doc</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+    &#169; Copyright 2024, Buddhist Digital Resource Center.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    </div>
+  </body>
+</html>

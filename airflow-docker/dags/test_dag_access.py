@@ -116,6 +116,6 @@ my_task()
 # sqs_sensor >> process_task
 if __name__ == '__main__':
     #    gs_dag.test()
-    gs_dag.cli()
+    dag.cli()
 
     

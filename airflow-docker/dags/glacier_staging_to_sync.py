@@ -57,8 +57,7 @@ We expect to get, in Response['Messages][0]['Body']['Records'] a set if dicts,
 import collections
 import json
 import os
-import sys
-from pprint import pp
+
 import shutil
 import airflow.operators.bash
 
@@ -66,45 +65,59 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowFailException, AirflowException
 from datetime import datetime, timedelta
-from bdrc_bag import bag_ops
+from bag import bag_ops
+from botocore.exceptions import ClientError
 from util_lib.version import bdrc_util_version
 
 from staging_utils import *
 
-# create a named tuple
-
-# create a datetime.tzinfo for local time zone
-def local_tz():
-    import pytz
-    return pytz.timezone('America/New_York')
-
+#  ------------   local types----------------------------
 Download_Map = collections.namedtuple('Download_Map', ['region_name', 'bucket', 'queue_name', 'config_section_name'])
+#  ------------   /local types----------------------------
 
-# region ------------- PROD/DEV CONFIG  ----------------------------
-# Edit these parameters - this section is only for parameters that differ
-# between production and test
 
-DEV_TIME_DELTA: timedelta = timedelta(minutes=10)
-PROD_TIME_DELTA: timedelta = timedelta(minutes=60)
+# -------------  CONFIG CONST  ----------------------------
 
+BAG_ZIP_PATTERN="*.bag.zip"
+
+# Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
 #
 # DB for log_dip
-PROD_DB: str = 'prod'
-DEV_DB: str  = 'qa'
-# region ------------- /PROD/DEV CONFIG  ----------------------------
+_PROD_DB: str = 'prod'
+_DEV_DB: str = 'qa'
+#
+# DAG parameters
 
-# region ------------   RESOURCE CONFIG  ----------------------------
-# See AWSIntake.setup-aws.py for the queue names
-# See 'deploy' for the config section names
-download_map: [Download_Map] = [
-    Download_Map('ap-northeast-2', 'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake', 'ap_northeast'),
-    Download_Map('ap-northeast-2', 'glacier.staging.nlm.bdrc.org', 'NlmReadyToIntake', 'ap_northeast'),
-    Download_Map('us-east-1', 'manifest.bdrc.org', 'ManifestReadyToIntake', 'default')
-]
-# Region, SQS client
+_DEV_TIME_SCHEDULE: timedelta =  timedelta(hours=6)
+_DEV_DAG_START_DATE: datetime = datetime(2024, 11, 12, 11, 15)
+_DEV_DAG_END_DATE: datetime = datetime(2024, 12, 8, hour=23)
+_DEV_DL_PER_DAG=5
 
+
+_PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
+_PROD_DAG_START_DATE: datetime = datetime(2024, 5, 18, 17, 22)
+_PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
+_PROD_DL_PER_DAG=15
+
+# Sync parameters
+_DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp" )
+_PROD_DEST_PATH_ROOT: str = "/mnt"
+
+# ------------- CONFIG CONST  ----------------------------
+
+# region ------------   CONST  ----------------------------
 
 UNGLACIERED_QUEUE_NAME: str = 'ManifestReadyToIntake'
+
+# See AWSIntake.setup-aws.py for the queue names
+# See 'deploy' for the config section names
+_PROD_DOWNLOAD_MAP: [Download_Map] = [
+    Download_Map('ap-northeast-2', 'glacier.staging.fpl.bdrc.org', 'FplReadyToIntake', 'ap_northeast'),
+    Download_Map('ap-northeast-2', 'glacier.staging.nlm.bdrc.org', 'NlmReadyToIntake', 'ap_northeast'),
+]
+_DEV_DOWNLOAD_MAP: [Download_Map] = [
+    Download_Map('us-east-1', 'manifest.bdrc.org', UNGLACIERED_QUEUE_NAME, 'default')
+]
 
 # For determining some file sys roots
 DARWIN_PLATFORM: str = "darwin"
@@ -114,16 +127,33 @@ REQUESTED_AWS_EVENTS: [str] = ['ObjectRestore:Completed', 'ObjectCreated:*']
 # our buckets and SQS queues are in these sections of the config
 REQUESTED_AWS_SECTIONS: [str] = ['default', 'ap_northeast']
 
-# region ------------   RESOURCE CONFIG  ----------------------------
+#  ------------   /CONST  ----------------------------
 
-# --------------------- LOAD CONFIG  ---------------
+# --------------------- DEV|PROD CONFIG  ---------------
 # Loads the values set in MY_.....
+# Of course, you do not want to call side-effect inducing functions in setting this
+# See the dev section below
+DAG_TIME_DELTA: timedelta = _PROD_TIME_SCHEDULE
+DAG_START_DATETIME = _PROD_DAG_START_DATE
+DAG_END_DATETIME = _PROD_DAG_END_DATE
+MY_DB: str = _PROD_DB
+download_map: [Download_Map] = _PROD_DOWNLOAD_MAP
+MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
+MY_DL_PER_DAG = _PROD_DL_PER_DAG
 
-MY_TIME_DELTA:timedelta = PROD_TIME_DELTA
-MY_DB: str = PROD_DB
-# --------------------- / LOAD CONFIG  ---------------
 
-# region --------------- SETUP DAG    ----------------
+DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
+DAG_START_DATETIME = _DEV_DAG_START_DATE
+DAG_END_DATETIME = _DEV_DAG_END_DATE
+MY_DB = _DEV_DB
+download_map = _DEV_DOWNLOAD_MAP
+# OK tp leave local - $ARCH_ROOT in the .env makes this safe
+# MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
+MY_DL_PER_DAG = _DEV_DL_PER_DAG
+
+# --------------------- /DEV|PROD CONFIG  ---------------
+
+# --------------- SETUP DAG    ----------------
 #
 # this section configures the DAG filesystem. Coordinate with bdrc-docker-compose.yml
 #  scheduler:
@@ -147,107 +177,20 @@ os.makedirs(STAGING_PATH, exist_ok=True)
 APP_LOG_ROOT = Path.home() / "bdrc" / "log"
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
-DEST_PATH:Path  = Path("/mnt", "Archive")
+DEST_PATH: Path = Path(MY_DEST_PATH_ROOT, "Archive")
 # Non docker
 _DB_CONFIG: Path = Path.home() / ".config" / "bdrc" / "db_apps.config" if not Path.exists(
     Path("/run/secrets/db_apps")) else Path("/run/secrets/db_apps")
 
 # select a level (used in syncing)
 
-prod_level: str =  MY_DB
+prod_level: str = MY_DB
 # used in syncing
 util_ver: str
 try:
     util_ver: str = bdrc_util_version()
 except:
     util_ver = "Unknown"
-
-
-
-# -----------------  mocks for testing / debugging ------------------------
-# Set up this copy for mock objects, because debagging is destructive
-# removed - just set a bag zip file in AWS s3 and set up mock_message to get it
-# mock_downloads: [str] = [
-#     str(shutil.copy(BASE_PATH / "save-W1FPL2251.bag.zip", DOWNLOAD_PATH / "miniW1FPL2251.bag.zip"))]
-
-mock_message: [] = [
-    dict(
-        {
-            "eventVersion": "2.1",
-            "eventSource": "aws:s3",
-            "awsRegion": "ap-northeast-2",
-            "eventTime": "2024-04-06T00:11:23.730Z",
-            "eventName": "ObjectRestore:Completed",
-            "userIdentity": {
-                "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"
-            },
-            "requestParameters": {
-                "sourceIPAddress": "s3.amazonaws.com"
-            },
-            "responseElements": {
-                "x-amz-request-id": "439897F6741FD9BA",
-                "x-amz-id-2": "MF0oW9le+g8K5/R/uUks1QuFbZxNuSmZDWQ5utu8ZTcHEKSGFHzdFBEtebICzrPtG3YL1YVmffxhRw4nDPTZ1w=="
-            },
-            "s3": {
-                "s3SchemaVersion": "1.0",
-                "configurationId": "BagCreatedNotification",
-                "bucket": {
-                    "name": "glacier.staging.nlm.bdrc.org",
-                    "ownerIdentity": {
-                        "principalId": "A1JPP2WW1ZYN4F"
-                    },
-                    "arn": "arn:aws:s3:::glacier.staging.nlm.bdrc.org"
-                },
-                "object": {
-                    "key": "Archive0/00/W1NLM4700/W1NLM4700.bag.zip",
-                    "size": 17017201852,
-                    "eTag": "41654cbd2a8f2d3c0abc83444fde825b-2029",
-                    "sequencer": "00638792A45B638391"
-                }
-            },
-            "glacierEventData": {
-                "restoreEventData": {
-                    "lifecycleRestorationExpiryTime": "2024-04-12T00:00:00.000Z",
-                    "lifecycleRestoreStorageClass": "DEEP_ARCHIVE"
-                }
-            }
-        }
-    )]
-
-mock_message1: [] = [
-    dict(eventVersion="2.1", eventSource="aws:s3", awsRegion="us-east-1", eventTime="2024-02-24T08:47:18.267Z",
-         eventName="ObjectRestore:Completed", userIdentity={
-            "principalId": "AmazonCustomer:A1JPP2WW1ZYN4F"
-        }, requestParameters={
-            "sourceIPAddress": "s3.amazonaws.com"
-        }, responseElements={
-            "x-amz-request-id": "6E5A5E04B1CFFAC5",
-            "x-amz-id-2": "Tt/6gfwuhCu9X06urpzaVuNBhSv4EW47BlmS2WrViVZ+MNDLo/ckEgLqLGi02IV6L3vshvP++ps1iPp9Zl3tPQ=="
-        }, s3={
-            "s3SchemaVersion": "1.0",
-            "configurationId": "MGU5Zjk3MzItMjQ4Yi00MTU0LTk4ZGItNDBjYjU1MzhjMGU3",
-            "bucket": {
-                "name": "manifest.bdrc.org",
-                "ownerIdentity": {
-                    "principalId": "A1JPP2WW1ZYN4F"
-                },
-                "arn": "arn:aws:s3:::manifest.bdrc.org"
-            },
-            "object": {
-                "key": "ao1060/W1FPL2251.bag.zip",
-                "size": 78668981,
-                "eTag": "405202973fc17c6f4b26cb56022c6201-10",
-                "versionId": "vwfO4VqvGTlWeuSAtXDOhPzFhl.6YrSG",
-                "sequencer": "0065C3D18445E403D5"
-            }
-        }, glacierEventData={
-            "restoreEventData": {
-                "lifecycleRestorationExpiryTime": "2024-03-06T00:00:00.000Z",
-                "lifecycleRestoreStorageClass": "DEEP_ARCHIVE"
-            }
-        })
-]
-
 
 #  ----------------------   utils  -------------------------
 
@@ -369,7 +312,7 @@ def build_sync_env(execution_date) -> dict:
 # ----------------------   airflow task declarations  -------------------------
 
 
-@task( retries=10,retry_delay=timedelta(hours=6))
+@task(retries=10, retry_delay=timedelta(hours=6))
 def get_restored_object_messages():
     """
     Pull a message from SQS
@@ -379,13 +322,12 @@ def get_restored_object_messages():
     # return mock_message
 
     # output buffer
-    s3_records = []
-    session_dict: {} = {}
+    s3_records: [] = []
 
     # read from an SQS Queue
     # map of sessions, keyed by region
     try:
-        session_dict = create_fetch_sessions(download_map)
+        session_dict: {} = create_fetch_sessions(download_map)
 
         for dm_entry in download_map:
             region_name: str = dm_entry.region_name
@@ -397,7 +339,11 @@ def get_restored_object_messages():
             response = sqs.receive_message(
                 QueueUrl=queue_url,
                 AttributeNames=['All'],
-                MaxNumberOfMessages=5,
+
+                # SEVERE WARNING ALERT  YOU MUST ONLY GET 1 MESSAGE AT A TIME.
+                # If there is a failure, and multiple messages are received, and one fails,
+                # special code will have to be written to fetch others
+                MaxNumberOfMessages=1,
                 VisibilityTimeout=10,  # hide it from other consumers for 10 seconds
                 WaitTimeSeconds=1
             )
@@ -419,9 +365,15 @@ def get_restored_object_messages():
                         records = message_body['Records']
                         msg_s3_records = [r for r in records if
                                           match_any_event_class(r.get("eventName"), REQUESTED_AWS_EVENTS)]
+                        # Add to log
+                        for m in msg_s3_records:
+                            work_rid: str = work_rid_from_aws_key( m['s3']['object']['key'])
+                            db_phase(GlacierSyncOpCodes.RESTORED, work_rid, db_config=MY_DB, user_data=m)
+
                         if msg_s3_records:
                             s3_records.extend(msg_s3_records)
                             pp(f"Added {len(records)}")
+
                     else:
                         pp('No records in message')
 
@@ -430,7 +382,6 @@ def get_restored_object_messages():
                         QueueUrl=queue_url,
                         ReceiptHandle=receipt_handle
                     )
-
                 else:
                     pp('No messages to receive')
     finally:
@@ -442,6 +393,19 @@ def get_restored_object_messages():
     if not s3_records:
         raise AirflowException("No restore requests available")
     return s3_records
+
+
+
+def send_retry_if(bucket: str, key: str, e: ClientError):
+    """
+    :param bucket:
+    :param key:
+    :param specific Exception
+    :return:
+    """
+    error_code = e.response['Error']['Code']
+    if error_code == 'InvalidObjectState':
+        print("Caught an InvalidObjectState error")
 
 
 @task
@@ -466,14 +430,14 @@ def download_from_messages(s3_records) -> [str]:
             bucket = s3_record['s3']['bucket']['name']
             key = s3_record['s3']['object']['key']
 
-            # DEBUG
+            # DEBUG_DEV
+            # Overwrite to simulate a failure - a key that can never appear
             # key += "simulate_failureHack"
 
             download_full_path: Path = DOWNLOAD_PATH / key
             dfp_str: str = str(download_full_path)
             pp(f"{download_full_path=} {dfp_str=}")
             os.makedirs(download_full_path.parent, exist_ok=True)
-
 
             s3 = get_cached_session(get_download_map_for_region(awsRegion).config_section_name).client('s3')
             # DEBUG Just keep using the same file. Externally, copy from a source
@@ -486,24 +450,49 @@ def download_from_messages(s3_records) -> [str]:
             pp(f"Downloaded S3://{bucket}/{key} to {dfp_str}")
             downloaded_paths.append(dfp_str)
             # Some exceptions, trigger retry
+
+            work_rid: str = work_rid_from_aws_key(key)
+            db_phase(GlacierSyncOpCodes.DOWNLOADED, work_rid,   db_config=MY_DB, user_data={'download_path': dfp_str})
+
         except KeyError as e:
             err: str = f'KeyError: {e}'
             pp(err)
             raise ValueError(err)
         except ClientError as e:
-            err: str = f"Could not retrieve S3://{bucket}/{key}:  {e} "
+            err = f"Could not retrieve S3://{bucket}/{key}:"
             pp(err)
+            pp(e)
+            send_retry_if(bucket, key)
             raise ValueError(err)
         # General exception fails
         except:
-            ei = sys.excinfo()
+            import sys
+            ei = sys.exc_info()
             pp(ei)
             raise AirflowFailException(str(ei[1]))
-            
+
     else:
         pp('No messages')
 
     return downloaded_paths
+
+
+@task
+def get_downloads() -> [str]:
+    """
+    Get the list of paths that are ready to debag
+    :return:
+    """
+    import fnmatch
+    # For proof of concept, just use hardwired dir
+    matches = []
+    pattern = "*.bag.zip"
+    pp(f"Looking for {pattern} in {DOWNLOAD_PATH}")
+    for root, dirnames, filenames in os.walk(DOWNLOAD_PATH):
+        pp(f"{root=} {dirnames=} {filenames=}")
+        for filename in fnmatch.filter(filenames, BAG_ZIP_PATTERN):
+            matches.append(os.path.join(root, filename))
+    return matches[:MY_DL_PER_DAG]
 
 
 @task
@@ -531,7 +520,7 @@ def debag_downloads(downs: [str]) -> [str]:
     for down in unique_downs:
         # DEBUG_DEV - bypass debagging - just use what's there
         # debagged_downs:[] = ['/home/airflow/bdrc/data/work/W1NLM4700']
-        debagged_downs:[] = [str(d) for d in bag_ops.debag(down, str(STAGING_PATH))]
+        debagged_downs: [] = [str(d) for d in bag_ops.debag(down, str(STAGING_PATH))]
         debagged.extend(debagged_downs)
 
         # Add the bad manifest to the work to archive
@@ -541,9 +530,10 @@ def debag_downloads(downs: [str]) -> [str]:
             # Use some secret badass knowledge about how bag_ops.debag works
             # to know that the bag_ops creates a dir "bags" under
             # STAGING_PATH, and that contains a directory named <workname>.bag
-            bag_path: Path = STAGING_PATH /  "bags" /  f"{work_name}.bag"
+            bag_path: Path = STAGING_PATH / "bags" / f"{work_name}.bag"
             pp(f"{work_name=} {db_down=} {bag_path=}")
             shutil.move(bag_path, db_down)
+            db_phase(GlacierSyncOpCodes.DEBAGGED, work_name,  db_config=MY_DB, user_data={'debagged_path': db_down})
     return debagged
 
 
@@ -561,23 +551,29 @@ def sync_debagged(downs: [str], **context):
 
     pp(env)
 
-    
     for download in downs:
-
         # Build the sync command
         # The moustaches {{}} inject a literal, not an fString resolution
-        bash_command= f"""
+        bash_command = f"""
         #!/usr/bin/env bash
+        ls -l /mnt
         syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{download}" 2>&1 | tee $syncLogDateTimeFile
         rc=${{PIPESTATUS[0]}}
         exit $rc
         """
+
 
         airflow.operators.bash.BashOperator(
             task_id="sync_debag",
             bash_command=bash_command,
             env=env
         ).execute(context)
+
+        # If we got here, the sync succeeded, otherwise, the task raised "fail"
+        # jimk ao-workflows-24: remove the sync source
+        shutil.rmtree(download)
+
+        db_phase(GlacierSyncOpCodes.SYNCD, Path(download).stem,   db_config=MY_DB, user_data={'synced_path': download})
 
 
 # Not used: but you could pass it in to DAG constructor
@@ -595,15 +591,17 @@ default_args = {
 }
 
 with DAG('sqs_scheduled_dag',
-         # DEBUG_DEV - make a schedule
-         schedule=MY_TIME_DELTA,
-         # schedule=None,
-         # DEBUG_DEV - make a date range
-         start_date=datetime(2024, 4, 13, 1, 22),
-         end_date=datetime(2024, 5, 8, xhour=23),
+         schedule=DAG_TIME_DELTA,
+         start_date=DAG_START_DATETIME,
+         end_date=DAG_END_DATETIME,
          tags=['bdrc'],
-         catchup=False, # SUPER important. Catchups can confuse the Postgres DB
-         max_active_runs=4,
+         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+         # DEBUG_DEV
+         # max_active_runs=1,
+         # This kills when rsyncing
+         # max_active_runs=4,
+         max_active_runs=2,
+
 
          # Note we don't want to specify a retries argument for each/all tasks in the DAG.
          # Except for the looking for SQS messages for retry: that should retry if there are no messages.
@@ -611,14 +609,37 @@ with DAG('sqs_scheduled_dag',
          # retries = 5,
          # retry_delay = timedelta(hours=6)
 
-) as sync_dag:
-
+         ) as sync_dag:
     msgs = get_restored_object_messages()
     downloads = download_from_messages(msgs)
     to_sync = debag_downloads(downloads)
     sync_debagged(to_sync)
 
+with DAG('down_scheduled_dag',
+         schedule=DAG_TIME_DELTA,
+         start_date=DAG_START_DATETIME,
+         end_date=DAG_END_DATETIME,
+         tags=['bdrc'],
+         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+         # DEBUG_DEV
+         # max_active_runs=1,
+         # This kills when rsyncing
+         # max_active_runs=4,
+         max_active_runs=4
+
+
+         # Note we don't want to specify a retries argument for each/all tasks in the DAG.
+         # Except for the looking for SQS messages for retry: that should retry if there are no messages.
+         #
+         # retries = 5,
+         # retry_delay = timedelta(hours=6)
+
+         ) as dl_dag:
+    downloads = get_downloads()
+    to_sync = debag_downloads(downloads)
+    sync_debagged(to_sync)
+
 if __name__ == '__main__':
     # noinspection PyArgumentList
-    sync_dag.test()
+    dl_dag.test()
     # gs_dag.cli()
