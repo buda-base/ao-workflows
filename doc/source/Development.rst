@@ -17,7 +17,7 @@ the principal components of this module are:
 - test utilities.
 
 Building the image
-===================
+==================
 
 .. note::
 
@@ -124,6 +124,54 @@ references in bdrc-docker-compose.yml:
     The ``- ${ARCH_ROOT:-.}/AO-staging-Incoming`` uses standard bash variable resolution. If ``ARCH_ROOT`` is not set, it uses ``.``. This is a common pattern in the ``.env`` file.
 
 From the ``--dest`` dir, you can then control the docker compose with ``docker compose`` commands.
+
+Configuring Dev/Test and Production Environments
+================================================
+
+:config invariant: The item referred to does not havve any differences between dev/test and production.
+
+What you can skip
+-----------------
+Building the docker image and the container are *config invariant*  Even though ``bdrc-docker.sh`` adds in BDRC code, that variables that determine the dev or production environment are all configured at run time (see ``airflow-docker/dags/glacier_staging_to_sync.py:sync_debagged`` for the implementation).
+
+Patterns
+--------
+The general patterin in the code is to specify global and environment variable variants:
+
+.. code-block:: bash
+
+    _DEV_THING="Howdy"
+    _PROD_THING="Folks"
+    # ...
+    THING=${_DEV_THING}
+    # THING=${_PROD_THING}
+
+In some cases, ``THING`` is replaced as ``MY_THING``
+
+Things to change
+----------------
+
+There are two locations that specify a dev/test or production environment. These are all in ``airflow-docker``:
+
+``deploy.sh``
+^^^^^^^^^^^^^
+- Change the ``SYNC_ACCESS_UID`` to the current value.
+
+``dags/glacier_staging_to_sync.py``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Change the ``MY_DB`` global to the current value.
+
+.. tip::
+
+    ``deploy.sh`` writes the changed environment variables to the path *compose_build_dir*``/.env``  You can change these values in ``.env`` and simply ``docker compose down && dockef compose up -d`` to update them.
+
+    The ``MY_DB`` global is used in the ``sync_debagged`` function to determine the database to use. To update it, you simply replace the *compose_build_dir*``/dags/glacier_staging_to_sync.py`` file with the new version. You may have to check the auto update settings in the airflow UI to be sure this takes effect.
+
+
+
+``bdrc-docker-compose.yml``
+
+
 
 What is actually happening
 ==========================
