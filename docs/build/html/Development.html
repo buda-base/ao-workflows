@@ -154,6 +154,52 @@ For now, just copy <code class="docutils literal notranslate"><span class="pre">
 </div>
 <p>From the <code class="docutils literal notranslate"><span class="pre">--dest</span></code> dir, you can then control the docker compose with <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">compose</span></code> commands.</p>
 </section>
+<section id="configuring-dev-test-and-production-environments">
+<h2>Configuring Dev/Test and Production Environments<a class="headerlink" href="#configuring-dev-test-and-production-environments" title="Link to this heading">¶</a></h2>
+<dl class="field-list simple">
+<dt class="field-odd">config invariant<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The item referred to does not havve any differences between dev/test and production.</p>
+</dd>
+</dl>
+<section id="what-you-can-skip">
+<h3>What you can skip<a class="headerlink" href="#what-you-can-skip" title="Link to this heading">¶</a></h3>
+<p>Building the docker image and the container are <em>config invariant</em>  Even though <code class="docutils literal notranslate"><span class="pre">bdrc-docker.sh</span></code> adds in BDRC code, that variables that determine the dev or production environment are all configured at run time (see <code class="docutils literal notranslate"><span class="pre">airflow-docker/dags/glacier_staging_to_sync.py:sync_debagged</span></code> for the implementation).</p>
+</section>
+<section id="patterns">
+<h3>Patterns<a class="headerlink" href="#patterns" title="Link to this heading">¶</a></h3>
+<p>The general patterin in the code is to specify global and environment variable variants:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">_DEV_THING</span><span class="o">=</span><span class="s2">&quot;Howdy&quot;</span>
+<span class="nv">_PROD_THING</span><span class="o">=</span><span class="s2">&quot;Folks&quot;</span>
+<span class="c1"># ...</span>
+<span class="nv">THING</span><span class="o">=</span><span class="si">${</span><span class="nv">_DEV_THING</span><span class="si">}</span>
+<span class="c1"># THING=${_PROD_THING}</span>
+</pre></div>
+</div>
+<p>In some cases, <code class="docutils literal notranslate"><span class="pre">THING</span></code> is replaced as <code class="docutils literal notranslate"><span class="pre">MY_THING</span></code></p>
+</section>
+<section id="things-to-change">
+<h3>Things to change<a class="headerlink" href="#things-to-change" title="Link to this heading">¶</a></h3>
+<p>There are two locations that specify a dev/test or production environment. These are all in <code class="docutils literal notranslate"><span class="pre">airflow-docker</span></code>:</p>
+<section id="deploy-sh">
+<h4><code class="docutils literal notranslate"><span class="pre">deploy.sh</span></code><a class="headerlink" href="#deploy-sh" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Change the <code class="docutils literal notranslate"><span class="pre">SYNC_ACCESS_UID</span></code> to the current value.</p></li>
+</ul>
+</section>
+<section id="dags-glacier-staging-to-sync-py">
+<h4><code class="docutils literal notranslate"><span class="pre">dags/glacier_staging_to_sync.py</span></code><a class="headerlink" href="#dags-glacier-staging-to-sync-py" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Change the <code class="docutils literal notranslate"><span class="pre">MY_DB</span></code> global to the current value.</p></li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><code class="docutils literal notranslate"><span class="pre">deploy.sh</span></code> writes the changed environment variables to the path <a href="#id1"><span class="problematic" id="id2">*</span></a>compose_build_dir*``/.env``  You can change these values in <code class="docutils literal notranslate"><span class="pre">.env</span></code> and simply <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">compose</span> <span class="pre">down</span> <span class="pre">&amp;&amp;</span> <span class="pre">dockef</span> <span class="pre">compose</span> <span class="pre">up</span> <span class="pre">-d</span></code> to update them.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">MY_DB</span></code> global is used in the <code class="docutils literal notranslate"><span class="pre">sync_debagged</span></code> function to determine the database to use. To update it, you simply replace the <a href="#id3"><span class="problematic" id="id4">*</span></a>compose_build_dir*``/dags/glacier_staging_to_sync.py`` file with the new version. You may have to check the auto update settings in the airflow UI to be sure this takes effect.</p>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">bdrc-docker-compose.yml</span></code></p>
+</section>
+</section>
+</section>
 <section id="what-is-actually-happening">
 <h2>What is actually happening<a class="headerlink" href="#what-is-actually-happening" title="Link to this heading">¶</a></h2>
 <p>All this work supports essentially four functions, which comprise the process. The process container is an airflow DAG named  <code class="docutils literal notranslate"><span class="pre">sqs_scheduled_dag</span></code>  It appears in the docker UI (<a class="reference external" href="https://sattva:8089">https://sattva:8089</a>) as <code class="docutils literal notranslate"><span class="pre">sqs_scheduled_dag</span></code>.</p>
@@ -193,6 +239,16 @@ For now, just copy <code class="docutils literal notranslate"><span class="pre">
 <li><a class="reference internal" href="#architecture-of-this-module">Architecture of this module</a></li>
 <li><a class="reference internal" href="#building-the-image">Building the image</a></li>
 <li><a class="reference internal" href="#building-the-container">Building the container</a></li>
+<li><a class="reference internal" href="#configuring-dev-test-and-production-environments">Configuring Dev/Test and Production Environments</a><ul>
+<li><a class="reference internal" href="#what-you-can-skip">What you can skip</a></li>
+<li><a class="reference internal" href="#patterns">Patterns</a></li>
+<li><a class="reference internal" href="#things-to-change">Things to change</a><ul>
+<li><a class="reference internal" href="#deploy-sh"><code class="docutils literal notranslate"><span class="pre">deploy.sh</span></code></a></li>
+<li><a class="reference internal" href="#dags-glacier-staging-to-sync-py"><code class="docutils literal notranslate"><span class="pre">dags/glacier_staging_to_sync.py</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li><a class="reference internal" href="#what-is-actually-happening">What is actually happening</a><ul>
 <li><a class="reference internal" href="#retrying-when-there-is-no-data">Retrying when there is no data</a></li>
 <li><a class="reference internal" href="#using-a-bash-shell">Using a bash shell</a></li>

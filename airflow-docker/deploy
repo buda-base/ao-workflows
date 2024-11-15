@@ -21,6 +21,15 @@ export ME=$(basename $0)
 # prod:
 _PROD_SYNC_ACCESS_UID=1001
 _DEV_SYNC_ACCESS_UID=5000
+_PROD_ARCH_ROOT=
+_DEV_ARCH_ROOT=.
+
+MY_SYNC_ACCESS_UID=${_DEV_SYNC_ACCESS_UID}
+MY_ARCH_ROOT=${_DEV_ARCH_ROOT}
+
+#MY_SYNC_ACCESS_UID=${_PROD_SYNC_ACCESS_UID}
+#MY_ARCH_ROOT=${_PROD_ARCH_ROOT}
+
 
 #endregion
 function usage() {
@@ -122,9 +131,7 @@ COMPOSE_PY_REQS=
 BIN=
 COMPOSE_BUILD_DIR=
 # Comment ARCH_ROOT in production, to use the default /mnt in bdrc-docker-compose
-# DEBUG_DEV
-# ARCH_ROOT=.
-ARCH_ROOT=
+ARCH_ROOT=${MY_ARCH_ROOT}
 #
 # For build only
 BUILD_CONFIG_ROOT=
