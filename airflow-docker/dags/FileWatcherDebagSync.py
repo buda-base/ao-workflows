@@ -371,6 +371,16 @@ def sync(**context):
 
         db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
 
+@task
+def cleanup(**context):
+    """
+    Cleans up the work area that was sync'd. Of course, you only run after sync has succeeded
+    """
+    # Use the same paths that were input to 'sync'
+    p_to_rm: [Path] = context['ti'].xcom_pull(task_ids='debag', key='debagged_downs')
+    for p in p_to_rm:
+        pp(p)
+        shutil.rmtree(p)
 
 default_args = {
     'owner': 'airflow',
@@ -409,7 +419,7 @@ with DAG('down_scheduled',
         # mode='reschedule'
     )
 
-    start >> wait_for_file >> debag() >> sync()
+    start >> wait_for_file >> debag() >> sync() >> cleanup()
 
 
 with DAG('feeder',
