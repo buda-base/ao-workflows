@@ -79,7 +79,8 @@ _PROD_DAG_END_DATE: DateTime = DateTime(2024, 7, 8, hour=23)
 
 # Sync parameters
 _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp")
-_PROD_DEST_PATH_ROOT: str = "/mnt"
+_DOCKER_DEST_PATH_ROOT: str = "/mnt"
+_PROD_DEST_PATH_ROOT: str = _DOCKER_DEST_PATH_ROOT
 
 # ------------- CONFIG CONST  ----------------------------
 
@@ -106,7 +107,7 @@ DAG_START_DATETIME = _DEV_DAG_START_DATE
 DAG_END_DATETIME = _DEV_DAG_END_DATE
 MY_DB = _DEV_DB
 # OK tp leave local - $ARCH_ROOT in the .env makes this safe
-MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
+MY_DEST_PATH_ROOT = _DOCKER_DEST_PATH_ROOT
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 
@@ -421,25 +422,23 @@ with DAG('feeder',
         max_active_runs=1) as feeder:
 
     @task
-    def feed_files():
+    def feed_files(src_path: Path, dest_path: Path):
         """
         Replenishes the ready directory
         :return:
         """
-        pattern = "*.bag.zip"
-        dest_path: Path = READY_PATH
 
-        pp(f"Looking for {pattern} in {dest_path=}")
         in_process_queue_bag_count: int = 0
         with os.scandir(dest_path) as _process:
             for _p in _process:
                 if _p.is_file() and  fnmatch.fnmatch(_p.name, BAG_ZIP_GLOB):
                     in_process_queue_bag_count += 1
 
+        pp(f"Looking for {BAG_ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
         if in_process_queue_bag_count < PROCESSING_LOW_LIMIT:
             n_to_feed: int = PROCESSING_HIGH_LIMIT - in_process_queue_bag_count
             to_move: [] = []
-            with os.scandir(DOWNLOAD_PATH) as _dir:
+            with os.scandir(src_path) as _dir:
                 for _d in _dir:
                     if _d.is_file() and fnmatch.fnmatch(_d.name, BAG_ZIP_GLOB):
                         to_move.append(_d.path)
@@ -450,8 +449,10 @@ with DAG('feeder',
             for _m in to_move:
                 pp(f"Moving {_m} to {dest_path}/{Path(_m).name}")
                 shutil.move(_m, dest_path)
+        else:
+            pp("No need to feed")
 
-    feed_files()
+    feed_files(DOWNLOAD_PATH, READY_PATH)
 
 if __name__ == '__main__':
     # noinspection PyArgumentList
