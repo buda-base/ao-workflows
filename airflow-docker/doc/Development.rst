@@ -155,9 +155,6 @@ Retrying when there is no data
 
 The  ``get_restored_object_messages``` task will retry if there are no messages. This is shown in the  task graph above: the task is labeled as 'up-for-retry'  This is given as a parameter to the task's decorator. This is the only task to retry on failure, as it is the only one expected to fail, when there are no object messages to retrieve.
 
-Using a bash shell
-------------------
-
 
 
 
