@@ -1,6 +1,6 @@
 boto3~=1.21.21
 bdrc-volume-manifest-builder>=1.2.6
-bdrc-bag>=0.0.6
+bdrc-bag>=0.0.7
 bdrc-util>=1.0.11
 botocore~=1.24.21
 apache-airflow-providers-amazon
