@@ -7,10 +7,22 @@ The FileSensor operator can block until a file is available, so we can start 'n'
 into the working area.
 Since we're event based, there's no need for an external process to track files that are in progress, or move them from
 an "in process" to a "done" bucket.
+
+The names of the directories that represent the stages are:
+DOWNLOAD_PATH: Where the files live before they are processed
+PROCESSING_PATH: Where the files are moved to when they are in the queue to be processed.
+
 """
+import fcntl
 import os
 import shutil
-from datetime import datetime, timedelta
+
+from airflow.exceptions import AirflowException
+from pendulum import DateTime, Timezone
+# This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
+# to drop back to datetime.timedelta
+from datetime import timedelta
+import fnmatch
 
 import airflow.operators.bash
 from airflow import DAG
@@ -25,7 +37,8 @@ from staging_utils import *
 
 
 
-# Do Once only. Seems to survive process boundaries
+# Do Once only. Seems to survive process boundaries.
+# You can also do this in the UI  (Admin -> Conections
 
 # from airflow import settings
 # from airflow.models import Connection
@@ -55,13 +68,14 @@ _DEV_DB: str = 'qa'
 #
 # DAG parameters
 
-_DEV_TIME_SCHEDULE: timedelta = timedelta(minutes=6)
-_DEV_DAG_START_DATE: datetime = datetime(2024, 11, 12, 11, 15)
-_DEV_DAG_END_DATE: datetime = datetime(2024, 12, 8, hour=23)
+# TODO: Convert to pendulum
+_DEV_TIME_SCHEDULE: timedelta = timedelta(minutes=3)
+_DEV_DAG_START_DATE: DateTime = DateTime(2024, 11, 19, 11, 15)
+_DEV_DAG_END_DATE: DateTime = DateTime(2024, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
-_PROD_DAG_START_DATE: datetime = datetime(2024, 5, 18, 17, 22)
-_PROD_DAG_END_DATE: datetime = datetime(2024, 7, 8, hour=23)
+_PROD_DAG_START_DATE: DateTime = DateTime(2024, 5, 18, 17, 22)
+_PROD_DAG_END_DATE: DateTime = DateTime(2024, 7, 8, hour=23)
 
 # Sync parameters
 _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp")
@@ -92,7 +106,7 @@ DAG_START_DATETIME = _DEV_DAG_START_DATE
 DAG_END_DATETIME = _DEV_DAG_END_DATE
 MY_DB = _DEV_DB
 # OK tp leave local - $ARCH_ROOT in the .env makes this safe
-# MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
+MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 
@@ -113,15 +127,29 @@ BASE_PATH = Path.home() / "bdrc" / "data"
 DOWNLOAD_PATH: Path = BASE_PATH / "Incoming"
 
 # Processing resources
+#
+# Feeder DAG moves files here.
+READY_PATH: Path = DOWNLOAD_PATH / "ready"
+# wait_for_files task moves files here for them to work on
 PROCESSING_PATH: Path = DOWNLOAD_PATH / "in_process"
+# debag copies them here before destroying the original
 RETENTION_PATH: Path = DOWNLOAD_PATH / "save"
+# debag destination
+STAGING_PATH = BASE_PATH / "work"
 
 # Number of files that triggers the feeder dag
 PROCESSING_LOW_LIMIT: int = 2
 # Maximum number of files to be in the processing queue
 PROCESSING_HIGH_LIMIT: int = 20
 
-STAGING_PATH = BASE_PATH / "work"
+
+# For synchronized running.
+import tempfile
+# mkstemp returns a tuple. The first is the fd, the other is the path.
+LOCK_FILE: str = tempfile.NamedTemporaryFile('wb').name
+
+
+os.makedirs(READY_PATH, exist_ok=True)
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 os.makedirs(STAGING_PATH, exist_ok=True)
 os.makedirs(PROCESSING_PATH, exist_ok=True)
@@ -153,21 +181,42 @@ class CollectingSingleFileSensor(FileSensor):
     Returns a single file from a pool of readies. downstream users have to delete this file
     """
 
+    def acquire_lock(self):
+        lock_file = open(LOCK_FILE, 'w')
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        return lock_file
+
+    def release_lock(self,lock_file):
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.collected_files = []
+        self.file_dir: Path = Path(kwargs['filepath']).parent
 
     def poke(self, context):
         import glob
-        matched_files = glob.glob(self.filepath)
-        if matched_files:
-            context['ti'].xcom_push(key='collected_file', value=matched_files[0])
-            return True
-        return False
+        lock_file = self.acquire_lock()
+        try:
+            matched_files = glob.glob(self.filepath)
+            if matched_files:
+                # First, pick one, hide it from other sensors by moving it to in process.
+                # Return the in_process verskion
+
+                target_match = Path(matched_files[0])
+                # Fully qualify target path. YGNI (You're gonna need it)
+                target_path = PROCESSING_PATH / target_match.name
+                shutil.move(target_match, target_path)
+                # push the moved file onto the response stack
+                context['ti'].xcom_push(key='collected_file', value=str(target_path))
+                return True
+            return False
+        finally:
+            self.release_lock(lock_file)
 
 def build_sync_env(execution_date) -> dict:
     """
-    See sync_debagged task
+    See sync task
        You have to emulate this stanza in bdrcSync.sh to set logging paths correctly
     # tool versions
     export logDipVersion=$(log_dip -v)
@@ -229,12 +278,12 @@ def build_sync_env(execution_date) -> dict:
 # TODO: Capture the db_phase, from "downloaded" to "zip file detected"
 
 
-@task
-def debag_detected(retention_dir: str, **context) -> [str]:
+@task(retries=0)
+def debag(**context) -> [str]:
     """
-    Debags each unload
+    Saves each download, then debags it
     :param downs: list of downloaded files
-    :return: list of **path names** of  unbagged work archives. path object is not serializable,
+    :return: list of **path names** of  unbagged work archives
     so returning strings
     """
 
@@ -242,14 +291,16 @@ def debag_detected(retention_dir: str, **context) -> [str]:
     # return ['/home/airflow/bdrc/data/work/W1NLM4700']
     # Get the file
     detected = context['ti'].xcom_pull(task_ids='wait_for_file', key='collected_file')
-    shutil.copy(detected, retention_dir)
-    pp(f"Copied {detected} to {retention_dir}. Using {STAGING_PATH} as the staging area")
+
+    # TODO: Figure out why FileSensor returns empty
+    if not detected:
+        raise AirflowException("No file detected, but wait_for_file returned true")
+    shutil.copy(detected, RETENTION_PATH)
+    pp(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
     os.makedirs(STAGING_PATH, exist_ok=True)
 
-    # suppoprt multiple bags in a single download
-    work_name: str = Path(detected).stem
 
-    # Debag returns [pathlib.Path]
+    # Debag returns [pathlib.Path] - supports multiple works per bag
     debagged_downs = bag_ops.debag(detected, str(STAGING_PATH))
     # Use some secret badass knowledge about how bag_ops.debag works
     # to know that the bag_ops creates a dir "bags" under
@@ -275,13 +326,13 @@ def debag_detected(retention_dir: str, **context) -> [str]:
                 shutil.move(fd.path, target)
         pp(f"{work_name=} {db_down=} {src_bag_path=}")
         db_phase(GlacierSyncOpCodes.DEBAGGED, work_name, db_config=MY_DB, user_data={'debagged_path': str(db_down)})
-    return [str(d.absolute()) for d in debagged_downs]
+    context['ti'].xcom_push(key="debagged_downs", value=[str(d.absolute()) for d in debagged_downs])
 
 
-@task
-def sync_debagged(down: [str], **context):
+@task(retries=0)
+def sync(**context):
     """
-    Syncs each debagged work
+    Syncs each work in a bag
     :param downs:
     :param context: airflow context
     """
@@ -291,107 +342,114 @@ def sync_debagged(down: [str], **context):
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
 
+    downs = context['ti'].xcom_pull(task_ids='debag', key='debagged_downs')
+
     env: {} = build_sync_env(local_start)
 
     pp(env)
 
-    # Build the sync command
-    # The moustaches {{}} inject a literal, not an fString resolution
-    bash_command = f"""
-    #!/usr/bin/env bash
-    ls -l /mnt
-    syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{down}" 2>&1 | tee $syncLogDateTimeFile
-    rc=${{PIPESTATUS[0]}}
-    exit $rc
-    """
+    pp(downs)
+    for down in downs:
+        # Build the sync command
+        # The moustaches {{}} inject a literal, not an fString resolution
+        bash_command = f"""
+        #!/usr/bin/env bash
+        set -vx
+        which syncOneWork.sh
+        echo $PATH
+        syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{down}" 2>&1 | tee $syncLogDateTimeFile
+        rc=${{PIPESTATUS[0]}}
+        exit $rc
+        """
 
-    airflow.operators.bash.BashOperator(
-        task_id="sync_debag",
-        bash_command=bash_command,
-        env=env
-    ).execute(context)
+        airflow.operators.bash.BashOperator(
+            task_id="sync_debag",
+            bash_command=bash_command,
+            env=env
+        ).execute(context)
 
-    db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': download})
+        db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
 
 
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    #    'start_date': datetime(2024, 2, 20),
+    #    'start_date': DateTime(2024, 2, 20),
     #    'email': ['your-email@example.com'],
     'email_on_failure': False,
     'email_on_retry': False,
-    'retries': 22,
-    'retry_delay': timedelta(minutes=1),
+    # Noisy in debug. Different dags will have to handle their own way.
+    # 'retries': 22,
+    # 'retry_delay': timedelta(minutes=1),
     'catchup': False
 }
 
 
 with DAG('down_scheduled',
-         schedule=DAG_TIME_DELTA,
-         start_date=DAG_START_DATETIME,
-         end_date=DAG_END_DATETIME,
-         tags=['bdrc'],
-         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
-         default_args=default_args,
-         max_active_runs=6
-         ) as get_one:
+    # These are for rapid file testing
+    schedule=timedelta(seconds=30),
+     start_date=DateTime(2024, 11, 21, 15, 30,tzinfo=Timezone('America/New_York')),
+     end_date=DAG_END_DATETIME,
+     tags=['bdrc'],
+     catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+     default_args=default_args,
+     max_active_runs=6
+     ) as get_one:
     start = EmptyOperator(
         task_id='start'
     )
 
     wait_for_file = CollectingSingleFileSensor(
         task_id='wait_for_file',
-        filepath=f"{PROCESSING_PATH}/{BAG_ZIP_GLOB}",
+        filepath=f"{str(READY_PATH)}/{BAG_ZIP_GLOB}",
         poke_interval=10,
-        timeout=600
+        # Needed for fs? timeout=5,
+        # Apparently, having this on returns true
+        # mode='reschedule'
     )
 
-    if wait_for_file:
-        a_download = debag_detected(RETENTION_PATH)
-        sync_debagged(a_download)
+    start >> wait_for_file >> debag() >> sync()
 
 
 with DAG('feeder',
+         schedule=timedelta(hours=2),
          start_date=DAG_START_DATETIME,
          end_date=DAG_END_DATETIME,
-         tags=['bdrc'],
-         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
-         default_args=default_args,
-         max_active_runs=6) as feeder:
+        tags=['bdrc'],
+        catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+        default_args=default_args,
+        max_active_runs=1) as feeder:
 
     @task
     def feed_files():
         """
-        Replenishes the to_process directory
+        Replenishes the ready directory
         :return:
         """
-    import fnmatch
-    # For proof of concept, just use hardwired dir
-    matches = []
-    pattern = "*.bag.zip"
-    pp(f"Looking for {pattern} in {PROCESSING_PATH}")
-    in_process_queue_bag_count: int = 0
-    with os.scandir(PROCESSING_PATH) as _process:
-        for _p in _process:
-            if _p.is_file() and  fnmatch.fnmatch(_p.name, BAG_ZIP_GLOB):
-                in_process_queue_bag_count += 1
+        pattern = "*.bag.zip"
+        dest_path: Path = READY_PATH
 
-    if in_process_queue_bag_count < PROCESSING_LOW_LIMIT:
-        n_to_feed: int = PROCESSING_HIGH_LIMIT - in_process_queue_bag_count
-        to_move: [] = []
-        with os.scandir(DOWNLOAD_PATH) as _dir:
-            for _d in _dir:
-                if _d.is_file() and fnmatch.fnmatch(_d.name, BAG_ZIP_GLOB):
-                    to_move.append(_d.path)
-                    n_to_feed -= 1
-                    if n_to_feed == 0:
-                        break
-        # _m is str
-        for _m in to_move:
-            pp(f"Moving {_m} to {PROCESSING_PATH}/{Path(_m).name}")
-            shutil.move(_m, PROCESSING_PATH)
-    # feed_files = PythonOperator(python_callable=feed_files, task_id='feed_files')
+        pp(f"Looking for {pattern} in {dest_path=}")
+        in_process_queue_bag_count: int = 0
+        with os.scandir(dest_path) as _process:
+            for _p in _process:
+                if _p.is_file() and  fnmatch.fnmatch(_p.name, BAG_ZIP_GLOB):
+                    in_process_queue_bag_count += 1
+
+        if in_process_queue_bag_count < PROCESSING_LOW_LIMIT:
+            n_to_feed: int = PROCESSING_HIGH_LIMIT - in_process_queue_bag_count
+            to_move: [] = []
+            with os.scandir(DOWNLOAD_PATH) as _dir:
+                for _d in _dir:
+                    if _d.is_file() and fnmatch.fnmatch(_d.name, BAG_ZIP_GLOB):
+                        to_move.append(_d.path)
+                        n_to_feed -= 1
+                        if n_to_feed == 0:
+                            break
+            # _m is str
+            for _m in to_move:
+                pp(f"Moving {_m} to {dest_path}/{Path(_m).name}")
+                shutil.move(_m, dest_path)
 
     feed_files()
 

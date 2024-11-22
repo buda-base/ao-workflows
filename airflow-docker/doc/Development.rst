@@ -140,7 +140,7 @@ The DAG contains four :strong:`tasks`, which operate sequentially: their relatio
     msgs = get_restored_object_messages()
     downloads = download_from_messages(msgs)
     to_sync = debag_downloads(downloads)
-    sync_debagged(to_sync)
+    sync(to_sync)
 
 In the Airflow UI, their relationship is shown in  the UI:
 
