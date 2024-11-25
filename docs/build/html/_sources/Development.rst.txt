@@ -16,8 +16,53 @@ the principal components of this module are:
 
 - test utilities.
 
+Development and Test Before Docker
+==================================
+
+Before launching into moving the DAGS into a Docker environment, you can test your airflow DAGS and the system in two other modes:
+- debugging (in an IDE)
+- on a local web server, to test parallelism and scheduling.
+
+Debugging and initial test
+--------------------------
+
+- create a development environment with ``pyenv`` that includes the apache and the BRC libraries. (see ``requirements.txt``)
+- In your DAG code, inclue a ``__main__`` block that runs ``your_dag.test()  (See dags/FileWatcherDebagSync.py for an example) You can run this under your IDE's debugger (You have to watch for PATH, because the shell that syncs is imperfect.)
+
+Local airflow services test
+---------------------------
+
+The IDE environment above doesn't test some parallelism that you might need (e.g. can several instances of the same DAG run in parallel). To do this, you would need to run airflow locally. Happily, this is easy. ``airflow-docker/``local-airflow.sh`` provides shorthands for:
+
+    - re-initializing the airflow database (good for cleaning out old records)
+    - starting and stopping the airflow webserver and scheduler (these are necessarily separate services, but are all you'll need to test locally
+    - creating the admin user you'll need.
+
+``local-airflow.sh`` is largely self-documenting and easy to read. The bare minimum to get up and running the first time (or to clear out a clutter of old test runs) is:
+
+.. code-block:: bash
+
+    ./local-airflow.sh -r
+    ./local-airflow.sh -a admin admin some@email.address
+    ./local-airflow.sh -w -u
+    ./local-airflow.sh -s -u
+
+and to stop:
+
+.. code-block:: bash
+
+    ./local-airflow.sh -w -d
+    ./local-airflow.sh -s -d
+
+Eager beaver improvers are welcome to coalesce the stop actions into one command.
+
+After starting the services, airflow will look in ``~/airflow/dags`` for DAGs to run. You can copy your DAGs there, and they will be available in the UI. I make and test changes in my IDE, under source control, and copy what I need into ``~/airflow/dags`` as needed.
+
+
+
+
 Building the image
-===================
+==================
 
 .. note::
 
@@ -38,7 +83,6 @@ Building the image
 
     Really important to be careful about ``.config``. We could possibly bind mount ``~service/.config`` to the container (since the container runs under the host's ``service`` uid: (see ``scheduler:....user:`` clause in `bdrc-docker-compose.yml``) but that brings in the whole tree, and is fragile. So I decided that copying the material from .config should be a manual operation that is selective. As the range of operations in airflow-docker expands, images may need to be built that need more entries from ``.config`` e.g, Google books.
     For now, just copy ``bdrc/auditTool`` into a config dir, and give that dir as the --config_dir argument. After the build is complete, it can be deleted, but should be preserved for next builds.
-
 
 In ``bdrc-docker.sh``
 
@@ -124,6 +168,55 @@ references in bdrc-docker-compose.yml:
     The ``- ${ARCH_ROOT:-.}/AO-staging-Incoming`` uses standard bash variable resolution. If ``ARCH_ROOT`` is not set, it uses ``.``. This is a common pattern in the ``.env`` file.
 
 From the ``--dest`` dir, you can then control the docker compose with ``docker compose`` commands.
+
+Configuring Dev/Test and Production Environments
+================================================
+
+:config invariant: The item referred to does not havve any differences between dev/test and production.
+
+
+What you can skip
+-----------------
+Building the docker image and the container are *config invariant*  Even though ``bdrc-docker.sh`` adds in BDRC code, that variables that determine the dev or production environment are all configured at run time (see ``airflow-docker/dags/glacier_staging_to_sync.py:sync_debagged`` for the implementation).
+
+Patterns
+--------
+The general pattern in in the code is to specify global and environment variable variants:
+
+.. code-block:: bash
+
+    _DEV_THING="Howdy"
+    _PROD_THING="Folks"
+    # ...
+    THING=${_DEV_THING}
+    # THING=${_PROD_THING}
+
+In some cases, ``THING`` is replaced as ``MY_THING``
+
+Things to change
+----------------
+
+There are two locations that specify a dev/test or production environment. These are all in ``airflow-docker``:
+
+``deploy.sh``
+^^^^^^^^^^^^^
+- Change the ``SYNC_ACCESS_UID`` to the current value.
+
+``dags/glacier_staging_to_sync.py``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Change the ``MY_DB`` global to the current value.
+
+.. tip::
+
+    ``deploy.sh`` writes the changed environment variables to the path *compose_build_dir*``/.env``  You can change these values in ``.env`` and simply ``docker compose down && dockef compose up -d`` to update them.
+
+    The ``MY_DB`` global is used in the ``sync_debagged`` function to determine the database to use. To update it, you simply replace the *compose_build_dir*``/dags/glacier_staging_to_sync.py`` file with the new version. You may have to check the auto update settings in the airflow UI to be sure this takes effect.
+
+
+
+``bdrc-docker-compose.yml``
+
+
 
 What is actually happening
 ==========================

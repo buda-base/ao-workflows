@@ -1,0 +1,76 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="DuplicatedCode" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <Languages>
+        <language minSize="266" name="Python" />
+      </Languages>
+    </inspection_tool>
+    <inspection_tool class="DuplicatedInspection" enabled="true" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="InstalledPackageInspection" enabled="true" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="PyCompatibilityInspection" enabled="true" level="TEXT ATTRIBUTES" enabled_by_default="true" editorAttributes="CONSIDERATION_ATTRIBUTES">
+      <option name="ourVersions">
+        <value>
+          <list size="6">
+            <item index="0" class="java.lang.String" itemvalue="3.6" />
+            <item index="1" class="java.lang.String" itemvalue="3.7" />
+            <item index="2" class="java.lang.String" itemvalue="3.8" />
+            <item index="3" class="java.lang.String" itemvalue="3.9" />
+            <item index="4" class="java.lang.String" itemvalue="3.10" />
+            <item index="5" class="java.lang.String" itemvalue="3.11" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="5">
+            <item index="0" class="java.lang.String" itemvalue="fastapi" />
+            <item index="1" class="java.lang.String" itemvalue="SQLAlchemy" />
+            <item index="2" class="java.lang.String" itemvalue="fpdf" />
+            <item index="3" class="java.lang.String" itemvalue="airflow" />
+            <item index="4" class="java.lang.String" itemvalue="dagster" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8Inspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="E402" />
+          <option value="W605" />
+          <option value="E722" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyPep8NamingInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredErrors">
+        <list>
+          <option value="N806" />
+          <option value="N813" />
+          <option value="N803" />
+          <option value="N802" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyTypeCheckerInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="PsParser.PsArgs.*" />
+          <option value="parse_args.*" />
+          <option value="parse_args.src" />
+          <option value="argparse.Namespace.*" />
+          <option value="gb_ocr.unpack.parse_args.*" />
+          <option value="sqlalchemy.dbapi.DBAPICursor.callproc" />
+          <option value="Exception.code" />
+          <option value="botocore.exceptions" />
+          <option value="irat.bdrc_irat.action_fs_sizes.bdrc_irat" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="ReferenceExistsInspection" enabled="true" level="ERROR" enabled_by_default="true" />
+    <inspection_tool class="UnusedInspection" enabled="true" level="WARNING" enabled_by_default="true" />
+  </profile>
+</component>

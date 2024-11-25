@@ -52,6 +52,44 @@
 <li><p>test utilities.</p></li>
 </ul>
 </section>
+<section id="development-and-test-before-docker">
+<h2>Development and Test Before Docker<a class="headerlink" href="#development-and-test-before-docker" title="Link to this heading">¶</a></h2>
+<p>Before launching into moving the DAGS into a Docker environment, you can test your airflow DAGS and the system in two other modes:
+- debugging (in an IDE)
+- on a local web server, to test parallelism and scheduling.</p>
+<section id="debugging-and-initial-test">
+<h3>Debugging and initial test<a class="headerlink" href="#debugging-and-initial-test" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>create a development environment with <code class="docutils literal notranslate"><span class="pre">pyenv</span></code> that includes the apache and the BRC libraries. (see <code class="docutils literal notranslate"><span class="pre">requirements.txt</span></code>)</p></li>
+<li><p>In your DAG code, inclue a <code class="docutils literal notranslate"><span class="pre">__main__</span></code> block that runs <a href="#id1"><span class="problematic" id="id2">``</span></a>your_dag.test()  (See dags/FileWatcherDebagSync.py for an example) You can run this under your IDE’s debugger (You have to watch for PATH, because the shell that syncs is imperfect.)</p></li>
+</ul>
+</section>
+<section id="local-airflow-services-test">
+<h3>Local airflow services test<a class="headerlink" href="#local-airflow-services-test" title="Link to this heading">¶</a></h3>
+<p>The IDE environment above doesn’t test some parallelism that you might need (e.g. can several instances of the same DAG run in parallel). To do this, you would need to run airflow locally. Happily, this is easy. <code class="docutils literal notranslate"><span class="pre">airflow-docker/``local-airflow.sh</span></code> provides shorthands for:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>re-initializing the airflow database (good for cleaning out old records)</p></li>
+<li><p>starting and stopping the airflow webserver and scheduler (these are necessarily separate services, but are all you’ll need to test locally</p></li>
+<li><p>creating the admin user you’ll need.</p></li>
+</ul>
+</div></blockquote>
+<p><code class="docutils literal notranslate"><span class="pre">local-airflow.sh</span></code> is largely self-documenting and easy to read. The bare minimum to get up and running the first time (or to clear out a clutter of old test runs) is:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./local-airflow.sh<span class="w"> </span>-r
+./local-airflow.sh<span class="w"> </span>-a<span class="w"> </span>admin<span class="w"> </span>admin<span class="w"> </span>some@email.address
+./local-airflow.sh<span class="w"> </span>-w<span class="w"> </span>-u
+./local-airflow.sh<span class="w"> </span>-s<span class="w"> </span>-u
+</pre></div>
+</div>
+<p>and to stop:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./local-airflow.sh<span class="w"> </span>-w<span class="w"> </span>-d
+./local-airflow.sh<span class="w"> </span>-s<span class="w"> </span>-d
+</pre></div>
+</div>
+<p>Eager beaver improvers are welcome to coalesce the stop actions into one command.</p>
+<p>After starting the services, airflow will look in <code class="docutils literal notranslate"><span class="pre">~/airflow/dags</span></code> for DAGs to run. You can copy your DAGs there, and they will be available in the UI. I make and test changes in my IDE, under source control, and copy what I need into <code class="docutils literal notranslate"><span class="pre">~/airflow/dags</span></code> as needed.</p>
+</section>
+</section>
 <section id="building-the-image">
 <h2>Building the image<a class="headerlink" href="#building-the-image" title="Link to this heading">¶</a></h2>
 <div class="admonition note">
@@ -154,6 +192,52 @@ For now, just copy <code class="docutils literal notranslate"><span class="pre">
 </div>
 <p>From the <code class="docutils literal notranslate"><span class="pre">--dest</span></code> dir, you can then control the docker compose with <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">compose</span></code> commands.</p>
 </section>
+<section id="configuring-dev-test-and-production-environments">
+<h2>Configuring Dev/Test and Production Environments<a class="headerlink" href="#configuring-dev-test-and-production-environments" title="Link to this heading">¶</a></h2>
+<dl class="field-list simple">
+<dt class="field-odd">config invariant<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The item referred to does not havve any differences between dev/test and production.</p>
+</dd>
+</dl>
+<section id="what-you-can-skip">
+<h3>What you can skip<a class="headerlink" href="#what-you-can-skip" title="Link to this heading">¶</a></h3>
+<p>Building the docker image and the container are <em>config invariant</em>  Even though <code class="docutils literal notranslate"><span class="pre">bdrc-docker.sh</span></code> adds in BDRC code, that variables that determine the dev or production environment are all configured at run time (see <code class="docutils literal notranslate"><span class="pre">airflow-docker/dags/glacier_staging_to_sync.py:sync_debagged</span></code> for the implementation).</p>
+</section>
+<section id="patterns">
+<h3>Patterns<a class="headerlink" href="#patterns" title="Link to this heading">¶</a></h3>
+<p>The general pattern in in the code is to specify global and environment variable variants:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">_DEV_THING</span><span class="o">=</span><span class="s2">&quot;Howdy&quot;</span>
+<span class="nv">_PROD_THING</span><span class="o">=</span><span class="s2">&quot;Folks&quot;</span>
+<span class="c1"># ...</span>
+<span class="nv">THING</span><span class="o">=</span><span class="si">${</span><span class="nv">_DEV_THING</span><span class="si">}</span>
+<span class="c1"># THING=${_PROD_THING}</span>
+</pre></div>
+</div>
+<p>In some cases, <code class="docutils literal notranslate"><span class="pre">THING</span></code> is replaced as <code class="docutils literal notranslate"><span class="pre">MY_THING</span></code></p>
+</section>
+<section id="things-to-change">
+<h3>Things to change<a class="headerlink" href="#things-to-change" title="Link to this heading">¶</a></h3>
+<p>There are two locations that specify a dev/test or production environment. These are all in <code class="docutils literal notranslate"><span class="pre">airflow-docker</span></code>:</p>
+<section id="deploy-sh">
+<h4><code class="docutils literal notranslate"><span class="pre">deploy.sh</span></code><a class="headerlink" href="#deploy-sh" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Change the <code class="docutils literal notranslate"><span class="pre">SYNC_ACCESS_UID</span></code> to the current value.</p></li>
+</ul>
+</section>
+<section id="dags-glacier-staging-to-sync-py">
+<h4><code class="docutils literal notranslate"><span class="pre">dags/glacier_staging_to_sync.py</span></code><a class="headerlink" href="#dags-glacier-staging-to-sync-py" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Change the <code class="docutils literal notranslate"><span class="pre">MY_DB</span></code> global to the current value.</p></li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><code class="docutils literal notranslate"><span class="pre">deploy.sh</span></code> writes the changed environment variables to the path <a href="#id3"><span class="problematic" id="id4">*</span></a>compose_build_dir*``/.env``  You can change these values in <code class="docutils literal notranslate"><span class="pre">.env</span></code> and simply <code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">compose</span> <span class="pre">down</span> <span class="pre">&amp;&amp;</span> <span class="pre">dockef</span> <span class="pre">compose</span> <span class="pre">up</span> <span class="pre">-d</span></code> to update them.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">MY_DB</span></code> global is used in the <code class="docutils literal notranslate"><span class="pre">sync_debagged</span></code> function to determine the database to use. To update it, you simply replace the <a href="#id5"><span class="problematic" id="id6">*</span></a>compose_build_dir*``/dags/glacier_staging_to_sync.py`` file with the new version. You may have to check the auto update settings in the airflow UI to be sure this takes effect.</p>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">bdrc-docker-compose.yml</span></code></p>
+</section>
+</section>
+</section>
 <section id="what-is-actually-happening">
 <h2>What is actually happening<a class="headerlink" href="#what-is-actually-happening" title="Link to this heading">¶</a></h2>
 <p>All this work supports essentially four functions, which comprise the process. The process container is an airflow DAG named  <code class="docutils literal notranslate"><span class="pre">sqs_scheduled_dag</span></code>  It appears in the docker UI (<a class="reference external" href="https://sattva:8089">https://sattva:8089</a>) as <code class="docutils literal notranslate"><span class="pre">sqs_scheduled_dag</span></code>.</p>
@@ -191,8 +275,23 @@ For now, just copy <code class="docutils literal notranslate"><span class="pre">
     <ul>
 <li><a class="reference internal" href="#">BDRC Airflow Development</a><ul>
 <li><a class="reference internal" href="#architecture-of-this-module">Architecture of this module</a></li>
+<li><a class="reference internal" href="#development-and-test-before-docker">Development and Test Before Docker</a><ul>
+<li><a class="reference internal" href="#debugging-and-initial-test">Debugging and initial test</a></li>
+<li><a class="reference internal" href="#local-airflow-services-test">Local airflow services test</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#building-the-image">Building the image</a></li>
 <li><a class="reference internal" href="#building-the-container">Building the container</a></li>
+<li><a class="reference internal" href="#configuring-dev-test-and-production-environments">Configuring Dev/Test and Production Environments</a><ul>
+<li><a class="reference internal" href="#what-you-can-skip">What you can skip</a></li>
+<li><a class="reference internal" href="#patterns">Patterns</a></li>
+<li><a class="reference internal" href="#things-to-change">Things to change</a><ul>
+<li><a class="reference internal" href="#deploy-sh"><code class="docutils literal notranslate"><span class="pre">deploy.sh</span></code></a></li>
+<li><a class="reference internal" href="#dags-glacier-staging-to-sync-py"><code class="docutils literal notranslate"><span class="pre">dags/glacier_staging_to_sync.py</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li><a class="reference internal" href="#what-is-actually-happening">What is actually happening</a><ul>
 <li><a class="reference internal" href="#retrying-when-there-is-no-data">Retrying when there is no data</a></li>
 <li><a class="reference internal" href="#using-a-bash-shell">Using a bash shell</a></li>
