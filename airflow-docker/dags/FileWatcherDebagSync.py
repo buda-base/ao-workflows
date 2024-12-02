@@ -74,8 +74,8 @@ _DEV_DAG_START_DATE: DateTime = DateTime(2024, 11, 19, 11, 15)
 _DEV_DAG_END_DATE: DateTime = DateTime(2024, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
-_PROD_DAG_START_DATE: DateTime = DateTime(2024, 5, 18, 17, 22)
-_PROD_DAG_END_DATE: DateTime = DateTime(2024, 7, 8, hour=23)
+_PROD_DAG_START_DATE: DateTime = DateTime(2024, 11, 24, 14, 22)
+_PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(weeks=1)
 
 # Sync parameters
 _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp")
@@ -102,12 +102,12 @@ DAG_END_DATETIME = _PROD_DAG_END_DATE
 MY_DB: str = _PROD_DB
 MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
 
-DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
-DAG_START_DATETIME = _DEV_DAG_START_DATE
-DAG_END_DATETIME = _DEV_DAG_END_DATE
-MY_DB = _DEV_DB
+# DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
+# DAG_START_DATETIME = _DEV_DAG_START_DATE
+# DAG_END_DATETIME = _DEV_DAG_END_DATE
+# MY_DB = _DEV_DB
 # OK tp leave local - $ARCH_ROOT in the .env makes this safe
-MY_DEST_PATH_ROOT = _DOCKER_DEST_PATH_ROOT
+# MY_DEST_PATH_ROOT = _DOCKER_DEST_PATH_ROOT
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 
@@ -296,8 +296,9 @@ def debag(**context) -> [str]:
     # TODO: Figure out why FileSensor returns empty
     if not detected:
         raise AirflowException("No file detected, but wait_for_file returned true")
+    pp(f"Copying {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
     shutil.copy(detected, RETENTION_PATH)
-    pp(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
+#    pp(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
     os.makedirs(STAGING_PATH, exist_ok=True)
 
 

@@ -4,13 +4,6 @@
 # Create a deployment directory for the airflow docker compose service
 
 #
-# also cobbled from bdrc-docker.sh
-# Create a test environment directory structure
-# Args: path to parent.
-# Result: Parent/Archive0/00-24
-#               /Archive1/25-49
-#               /Archive2/50-74
-#               /Archive1/75-99
 
 set -e
 export ME=$(basename $0)
@@ -19,17 +12,23 @@ export ME=$(basename $0)
 #region CONST
 # Allows RW access to RS Archives
 # prod:
+# Prod userid should be `service` uid on bodhi & sattva
 _PROD_SYNC_ACCESS_UID=1001
+# Standard user under docker
 _DEV_SYNC_ACCESS_UID=5000
+
+# See bdrc-docker-compose.yml - leaving this unset is handled with the:
+# - ${ARCH_ROOT:-/mnt}:/mnt
+# stanza in volumes: This has the same meaning as in bash variable substitution
+
 _PROD_ARCH_ROOT=
 _DEV_ARCH_ROOT=.
 
-MY_SYNC_ACCESS_UID=${_DEV_SYNC_ACCESS_UID}
-MY_ARCH_ROOT=${_DEV_ARCH_ROOT}
+MY_SYNC_ACCESS_UID=${_PROD_SYNC_ACCESS_UID}
+MY_ARCH_ROOT=${_PROD_ARCH_ROOT}
 
-#MY_SYNC_ACCESS_UID=${_PROD_SYNC_ACCESS_UID}
-#MY_ARCH_ROOT=${_PROD_ARCH_ROOT}
-
+# MY_SYNC_ACCESS_UID=${_DEV_SYNC_ACCESS_UID}
+# MY_ARCH_ROOT=${_DEV_ARCH_ROOT}
 
 #endregion
 function usage() {
@@ -52,10 +51,12 @@ init_test_env() {
     chmod -R 777 $todo
   done
 
+  # Set up the work directory that the production environment needs
   # Make download target
-  todo=${1}/AO-staging-Incoming/bag-download
+  todo="${1}/AO-staging-Incoming/bag-download"
   mkdir -p $todo || exit 1
-  chmod -R 777 ${1}/AO-staging-Incoming
+  chmod -R 777 "${1}/AO-staging-Incoming"
+
 }
 
 OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env -- "$@")
@@ -95,14 +96,13 @@ if [[ -z $SRC ]] || [[ -z $DEPLOY ]]; then
   exit 1
 fi
 
-if [[ ! -d $DEPLOY ]]; then
-  mkdir $DEPLOY
+[[ ! -d $DEPLOY ]] && {   mkdir $DEPLOY || exit 1 ;  }
   # jimk aow-14 - add sync logs
-  for DD in "$DEPLOY/dags" "$DEPLOY/logs"  "$DEPLOY/plugins" "$DEPLOY/processing" "$DEPLOY/processing/logs" ; do
+for DD in "$DEPLOY/dags" "$DEPLOY/logs"  "$DEPLOY/plugins" "$DEPLOY/processing" "$DEPLOY/processing/logs" ; do
     mkdir -p $DD
     chmod 777 $DD
-  done
-fi
+done
+
 
 log_echo docker-compose
 cp $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
