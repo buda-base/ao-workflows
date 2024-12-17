@@ -18,6 +18,7 @@ The DAG will:
 import s3pathlib
 from pprint import pp
 
+from s3pathlib import S3Path
 
 map_remap: {} = {
     "Archive0": [{"values": [25, 49], "dest": "Archive1"}],
@@ -53,10 +54,21 @@ def scan_glacier_bucket():
                 # print(f"      Skipping {bin_section}")
                 continue
             #
+            section_works:[s3pathlib.S3Path] = [ x for x in bin_section.iterdir() if x.is_dir() ]
+
             # count the children of a moved section
-            nw: int = len([x for x in  bin_section.iterdir() if x.is_dir()])
-            sum_nw += nw
-            print(f"Moving {nw} works from  {bin_section} to {dest_bin}")
+            n_works: int = len(section_works)
+            sum_nw += n_works
+            print(f"Moving {n_works} works from  {bin_section} to { dest_bin}")
+            for work in section_works:
+                work_name = f"Older_archive_{work.basename}_arn_here"
+                source_string: str = f"{bin_section.arn}{work.basename}"
+                # Write the original destination into Wnnnn.zip, and move it to the new location
+                new_dest: S3Path = glacier_bucket / dest_bin / bin_section.basename / work.basename / work_name
+                with new_dest.open( "w") as f:
+                    f.write(f"{source_string}\n")
+
+                print(f"copied {work}  from  {bin_section} to {new_dest}")
     print("total moved", sum_nw, sep=":")
 
 
