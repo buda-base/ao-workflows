@@ -3,8 +3,8 @@
 Parallelism is at the DAG level in airflow, so create a DAG that watches for file existence, then debags and syncs it
 **without** removing the debagged file.
 
-The FileSensor operator can block until a file is available, so we can start 'n' DAGS and then just dump a bunch of files
-into the working area.
+The FileSensor operator can block until a file is available, so we can start 'n' DAGS and then just dump a bunch of
+files into the working area.
 Since we're event based, there's no need for an external process to track files that are in progress, or move them from
 an "in process" to a "done" bucket.
 
@@ -14,32 +14,29 @@ PROCESSING_PATH: Where the files are moved to when they are in the queue to be p
 
 """
 import fcntl
+import fnmatch
 import os
 import shutil
-
-from airflow.exceptions import AirflowException
-from airflow.operators.python import BranchPythonOperator
-from pendulum import DateTime, Timezone
 # This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
 # to drop back to datetime.timedelta
 from datetime import timedelta
-import fnmatch
+from typing import Union, List
 
 import airflow.operators.bash
 from airflow import DAG
 from airflow.decorators import task
+from airflow.exceptions import AirflowException
 from airflow.operators.empty import EmptyOperator
-
+from airflow.operators.python import BranchPythonOperator
 from airflow.sensors.filesystem import FileSensor
 from bag import bag_ops
+from pendulum import DateTime, Timezone
 from util_lib.version import bdrc_util_version
 
 from staging_utils import *
 
-
-
 # Do Once only. Seems to survive process boundaries.
-# You can also do this in the UI  (Admin -> Conections
+# You can also do this in the UI  (Admin -> Connections
 
 # from airflow import settings
 # from airflow.models import Connection
@@ -61,11 +58,12 @@ from staging_utils import *
 
 ZIP_GLOB = "*.zip"
 BAG_ZIP_GLOB = "*.bag.zip"
-DEBAGGED_CONTEXT_KEY: str = "debagged_downs"
+EXTRACTED_CONTEXT_KEY: str = "extracted_works"
 #
 # Because we use this in multiple places
 DEBAG_TASK_ID: str = "debag"
-
+UNZIP_TASK_ID: str = "unzip"
+WAIT_FOR_FILE_TASK_ID: str = "wait_for_file"
 
 # Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
 #
@@ -77,8 +75,8 @@ _DEV_DB: str = 'qa'
 
 # TODO: Convert to pendulum
 _DEV_TIME_SCHEDULE: timedelta = timedelta(minutes=3)
-_DEV_DAG_START_DATE: DateTime = DateTime(2024, 11, 19, 11, 15)
-_DEV_DAG_END_DATE: DateTime = DateTime(2024, 12, 8, hour=23)
+_DEV_DAG_START_DATE: DateTime = DateTime(2025, 1, 12, 11, 15)
+_DEV_DAG_END_DATE: DateTime = DateTime(2025, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
 _PROD_DAG_START_DATE: DateTime = DateTime(2024, 11, 24, 14, 22)
@@ -109,12 +107,12 @@ DAG_END_DATETIME = _PROD_DAG_START_DATE.add(weeks=2)
 MY_DB: str = _PROD_DB
 MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
 
-# DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
-# DAG_START_DATETIME = _DEV_DAG_START_DATE
-# DAG_END_DATETIME = _DEV_DAG_END_DATE
-# MY_DB = _DEV_DB
-# OK tp leave local - $ARCH_ROOT in the .env makes this safe
-# MY_DEST_PATH_ROOT = _DOCKER_DEST_PATH_ROOT
+DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
+DAG_START_DATETIME = _DEV_DAG_START_DATE
+DAG_END_DATETIME = _DEV_DAG_END_DATE
+MY_DB = _DEV_DB
+# OK to leave local - $ARCH_ROOT in the .env makes this safe
+MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 
@@ -150,12 +148,11 @@ PROCESSING_LOW_LIMIT: int = 2
 # Maximum number of files to be in the processing queue
 PROCESSING_HIGH_LIMIT: int = 20
 
-
 # For synchronized running.
 import tempfile
+
 # mkstemp returns a tuple. The first is the fd, the other is the path.
 LOCK_FILE: str = tempfile.NamedTemporaryFile('wb').name
-
 
 os.makedirs(READY_PATH, exist_ok=True)
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
@@ -194,7 +191,7 @@ class CollectingSingleFileSensor(FileSensor):
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         return lock_file
 
-    def release_lock(self,lock_file):
+    def release_lock(self, lock_file):
         fcntl.flock(lock_file, fcntl.LOCK_UN)
         lock_file.close()
 
@@ -209,10 +206,10 @@ class CollectingSingleFileSensor(FileSensor):
             matched_files = glob.glob(self.filepath)
             if matched_files:
                 # First, pick one, hide it from other sensors by moving it to in process.
-                # Return the in_process verskion
+                # Return the in_process version
 
                 target_match = Path(matched_files[0])
-                # Fully qualify target path. YGNI (You're gonna need it)
+                # Fully qualify target path. YGNI (You're going to need it)
                 target_path = PROCESSING_PATH / target_match.name
                 shutil.move(target_match, target_path)
                 # push the moved file onto the response stack
@@ -221,6 +218,56 @@ class CollectingSingleFileSensor(FileSensor):
             return False
         finally:
             self.release_lock(lock_file)
+
+
+def add_if_work(unz: Path, works: [Path]) -> None:
+    """
+    Add a directory to an output buffer it contains a work structure
+    :param unz:
+    :param works:
+    :return:
+    """
+    if WorkStructureVersion.detect_work(unz) >= WorkStructureVersion.V1:
+        works.append(unz)
+    else:
+        for subdir in os.scandir(unz):
+            # Tranform dirEntry into Path
+            if subdir.is_dir() and WorkStructureVersion.detect_work(Path(subdir)) >= WorkStructureVersion.V1:
+                # transform a dir entry into a Path
+                works.append(Path(subdir))
+
+# Write a method that can take either a list of Paths or a single PathLike parameter
+# and return a list of Paths
+def get_extract_downs(unzipped: Union[List[Path], os.PathLike]) -> [Path]:
+    """
+    the input directory is the result of either an unzip or a debag operation.
+    Test its structure, to see if it is:
+    - a work,
+    - a parent of one or more work
+    :param unzipped: List of unzipped directories
+    :return:
+    """
+    # if unzipped is a list, iterate over it, else operate on it
+    works: [Path] = []
+    for unz in iter_or_return(unzipped):
+        # If the directory contains a 'work' directory, then this is a parent directory
+        # of one or more works. We need to return the list of works
+        add_if_work(unz, works)
+    return works
+
+
+def stage(detected) -> Path:
+    """
+    put the input article into the staging path
+    :param detected:
+    :return:
+    """
+    pp(f"Copying {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
+    shutil.copy(detected, RETENTION_PATH)
+    #    pp(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
+    os.makedirs(STAGING_PATH, exist_ok=True)
+    return STAGING_PATH
+
 
 def build_sync_env(execution_date) -> dict:
     """
@@ -282,15 +329,25 @@ def build_sync_env(execution_date) -> dict:
 
 
 # ----------------------   airflow task declarations  -------------------------
+def _which_file(**context):
+    """
+    Extracts the ZIP from the bag
+    :param context:
+    :return: Task id of handler
+    """
+    # Same as in the step debag
+    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
 
-# TODO: Capture the db_phase, from "downloaded" to "zip file detected"
+    if fnmatch.fnmatch(detected, BAG_ZIP_GLOB):
+        return DEBAG_TASK_ID
+    else:
+        return UNZIP_TASK_ID
 
 
 @task(retries=0)
 def debag(**context) -> [str]:
     """
     Saves each download, then debags it
-    :param downs: list of downloaded files
     :return: list of **path names** of  unbagged work archives
     so returning strings
     """
@@ -298,20 +355,29 @@ def debag(**context) -> [str]:
     # DEBUG_DEV
     # return ['/home/airflow/bdrc/data/work/W1NLM4700']
     # Get the file
-    detected = context['ti'].xcom_pull(task_ids='wait_for_file', key='collected_file')
+    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
 
     # TODO: Figure out why FileSensor returns empty
     if not detected:
         raise AirflowException("No file detected, but wait_for_file returned true")
     staging_path: Path = stage(detected)
+    empty_contents(staging_path)
 
+    # Remove any contents of staging_path
     # Debag returns [pathlib.Path] - supports multiple works per bag
-    debagged_downs = bag_ops.debag(detected, staging_path)
+    debagged_downs = bag_ops.debag(detected, str(staging_path))
+
+    # Get a list of all the possible works that could be in the debagged directory.
+    debagged_downs = get_extract_downs(debagged_downs)
     # Use some secret badass knowledge about how bag_ops.debag works
     # to know that the bag_ops creates a dir "bags" under
     # STAGING_PATH, and that contains a directory named <workname>.bag
     # We want to copy some data in the bag into the work to sync.
     # Add the bag description to the archive that is to be sync'd
+    #
+    # In the case of a multi-work bag, the bag_ops.debag treats all the works
+    # in a bag as a unitary bag, which makes it impossible to separate out the bags
+    # for each work.
     #
     # This turns out to be problematic for furture bagging, because debag sees
     # Work/Work.bag as a bag, but without any contents in the 'data/'
@@ -321,6 +387,9 @@ def debag(**context) -> [str]:
         bag_target: str = f"{work_name}.bag"
         dest_bag: Path = db_down / bag_target
         src_bag_path: Path = staging_path / "bags" / bag_target
+        if not os.path.exists(src_bag_path):
+            pp(f"Could not find {src_bag_path} for {work_name}")
+            continue
         save_glob: str = f"*manifest*.txt"
         for fd in os.scandir(src_bag_path):
             if fd.is_file() and fnmatch.fnmatch(fd, save_glob):
@@ -331,36 +400,7 @@ def debag(**context) -> [str]:
                 shutil.move(fd.path, target)
         pp(f"{work_name=} {db_down=} {src_bag_path=}")
         db_phase(GlacierSyncOpCodes.DEBAGGED, work_name, db_config=MY_DB, user_data={'debagged_path': str(db_down)})
-    context['ti'].xcom_push(key=DEBAGGED_CONTEXT_KEY, value=[str(d.absolute()) for d in debagged_downs])
-
-
-def stage(detected) -> Path:
-    """
-    put the input article into the staging path
-    :param detected:
-    :return:
-    """
-    pp(f"Copying {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
-    shutil.copy(detected, RETENTION_PATH)
-    #    pp(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
-    os.makedirs(STAGING_PATH, exist_ok=True)
-    return STAGING_PATH
-
-
-def _which_file(**context):
-    """
-    Extracts the ZIP from the bag
-    :param context:
-    :return: Task id of handler
-    """
-    # Same as in the step debag
-    detected = context['ti'].xcom_pull(task_ids='wait_for_file', key='collected_file')
-
-    if fnmatch.fnmatch(detected, BAG_ZIP_GLOB):
-        return DEBAG_TASK_ID
-    else:
-        return 'unzip'
-
+    context['ti'].xcom_push(key=EXTRACTED_CONTEXT_KEY, value=[str(d.absolute()) for d in debagged_downs])
 
 
 @task(retries=0)
@@ -368,9 +408,9 @@ def unzip(**context):
     """
     Unzip file into the same directory that debag would
     :param context:
-    :return: pushes into context['ti'](task_id DEBAG_TASK_ID, key DEBAGGED_CONTEXT_KEY)
+    :return: pushes into context['ti'](task_id DEBAG_TASK_ID, key EXTRACTED_CONTEXT_KEY)
     """
-    detected = context['ti'].xcom_pull(task_ids='wait_for_file', key='collected_file')
+    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
 
     # TODO: Figure out why FileSensor returns empty
     if not detected:
@@ -382,7 +422,9 @@ def unzip(**context):
         import zipfile
         with zipfile.ZipFile(detected, 'r') as z:
             z.extractall(staging_path)
-        context['ti'].xcom_push(task_id=DEBAG_TASK_ID, key=DEBAGGED_CONTEXT_KEY, value=[str(staging_path.absolute())])
+
+        staging_paths: [Path] = get_extract_downs(staging_path)
+        context['ti'].xcom_push(key=EXTRACTED_CONTEXT_KEY, value=[str(sp.absolute()) for sp in staging_paths])
     except Exception as e:
         raise AirflowException(f"Error unzipping {detected}: {str(e)}")
 
@@ -391,8 +433,7 @@ def unzip(**context):
 @task(retries=0, trigger_rule='none_failed')
 def sync(**context):
     """
-    Syncs each work in a bag. Downstream of a branching operator
-    :param downs:
+    Syncs each work in a bag.
     :param context: airflow context
     """
     from pendulum import DateTime
@@ -401,33 +442,37 @@ def sync(**context):
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
 
-    downs = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=DEBAGGED_CONTEXT_KEY)
+    downs = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
 
     env: {} = build_sync_env(local_start)
 
     pp(env)
 
     pp(downs)
-    for down in downs:
-        # Build the sync command
-        # The moustaches {{}} inject a literal, not an fString resolution
-        bash_command = f"""
-        #!/usr/bin/env bash
-        set -vx
-        which syncOneWork.sh
-        echo $PATH
-        syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{down}" 2>&1 | tee $syncLogDateTimeFile
-        rc=${{PIPESTATUS[0]}}
-        exit $rc
-        """
+    # downs could be a list of lists, if a bag or a zip file contained multiple works
+    for a_down in iter_or_return(downs):
+        # need an extra layer of indirection, for multi-zip or multi-bag-entries
+        for down in iter_or_return(a_down):
+            # Build the sync command
+            # The moustaches {{}} inject a literal, not an fString resolution
+            bash_command = f"""
+            #!/usr/bin/env bash
+            set -vx
+            which syncOneWork.sh
+            echo $PATH
+            syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{down}" 2>&1 | tee $syncLogDateTimeFile
+            rc=${{PIPESTATUS[0]}}
+            exit $rc
+            """
 
-        airflow.operators.bash.BashOperator(
-            task_id="sync_debag",
-            bash_command=bash_command,
-            env=env
-        ).execute(context)
+            airflow.operators.bash.BashOperator(
+                task_id="sync_debag",
+                bash_command=bash_command,
+                env=env
+            ).execute(context)
 
-        db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
+            db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
+
 
 @task
 def cleanup(**context):
@@ -435,11 +480,17 @@ def cleanup(**context):
     Cleans up the work area that was sync'd. Of course, you only run after sync has succeeded
     """
     # Use the same paths that were input to 'sync'
-    p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=DEBAGGED_CONTEXT_KEY)
-    for p in p_to_rm:
-        pp(p)
-        shutil.rmtree(p)
+    # p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=EXTRACTED_CONTEXT_KEY)
+    p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
 
+    for a_down in iter_or_return(p_to_rm):
+    # need an extra layer of indirection, for multi-zip or multi-bag-entries
+        for p in iter_or_return(a_down):
+            pp(f"removing {str(p)}")
+            shutil.rmtree(p)
+
+
+# DAG args for all DAGs
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -453,23 +504,22 @@ default_args = {
     'catchup': False
 }
 
-
 with DAG('down_scheduled',
-    # These are for rapid file testing
-    schedule=timedelta(seconds=30),
-     start_date=DateTime(2024, 11, 21, 15, 30,tzinfo=Timezone('America/New_York')),
-     end_date=DAG_END_DATETIME,
-     tags=['bdrc'],
-     catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
-     default_args=default_args,
-     max_active_runs=6
-     ) as get_one:
+         # These are for rapid file testing
+         schedule=timedelta(seconds=30),
+         start_date=DateTime(2024, 11, 21, 15, 30, tzinfo=Timezone('America/New_York')),
+         end_date=DAG_END_DATETIME,
+         tags=['bdrc'],
+         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+         default_args=default_args,
+         max_active_runs=6
+         ) as get_one:
     start = EmptyOperator(
         task_id='start'
     )
 
     wait_for_file = CollectingSingleFileSensor(
-        task_id='wait_for_file',
+        task_id=WAIT_FOR_FILE_TASK_ID,
         filepath=f"{str(READY_PATH)}/{ZIP_GLOB}",
         poke_interval=10,
         # Needed for fs? timeout=5,
@@ -481,18 +531,16 @@ with DAG('down_scheduled',
         task_id='which_file',
         python_callable=_which_file)
 
-    start >> wait_for_file >> which_file >> [debag,unzip] >> sync() >> cleanup()
-
+    start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> cleanup()
 
 with DAG('feeder',
          schedule=timedelta(hours=2),
          start_date=DAG_START_DATETIME,
          end_date=DAG_END_DATETIME,
-        tags=['bdrc'],
-        catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
-        default_args=default_args,
-        max_active_runs=1) as feeder:
-
+         tags=['bdrc'],
+         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+         default_args=default_args,
+         max_active_runs=1) as feeder:
     @task
     def feed_files(src_path: Path, dest_path: Path):
         """
@@ -503,7 +551,7 @@ with DAG('feeder',
         in_process_queue_bag_count: int = 0
         with os.scandir(dest_path) as _process:
             for _p in _process:
-                if _p.is_file() and  fnmatch.fnmatch(_p.name, ZIP_GLOB):
+                if _p.is_file() and fnmatch.fnmatch(_p.name, ZIP_GLOB):
                     in_process_queue_bag_count += 1
 
         pp(f"Looking for {ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
@@ -523,6 +571,7 @@ with DAG('feeder',
                 shutil.move(_m, dest_path)
         else:
             pp("No need to feed")
+
 
     feed_files(DOWNLOAD_PATH, READY_PATH)
 

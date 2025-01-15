@@ -2,9 +2,14 @@
 """
 Utilities for glacier staging
 """
+import os
 import pprint
+import shutil
+from enum import Enum
 from pathlib import Path
 import configparser
+import re
+
 import boto3
 import pendulum
 from pprint import pp
@@ -256,6 +261,69 @@ mock_message1: [] = [
          }
          )
 ]
+
+
+# enum to contain v1 work type and v2 work type
+class WorkStructureVersion():
+    V0 = 0 # none
+    V1 = 1
+    V2 = 2
+
+    @staticmethod
+    def detect_work(w_path: Path) -> int:
+        """
+        Check if the directory structure matches either of the two specified types.
+        :param w_path: Path to the top level folder 'WorkName'
+        :return: True if the directory structure matches either type, False otherwise
+        """
+        if not w_path.is_dir():
+            return WorkStructureVersion.V0
+
+        # Define the possible child folder names
+        possible_folders = {'archive', 'sources', 'images', 'eBooks', 'sync-inventory'}
+
+        # Check for the first structure type
+        for child in w_path.iterdir():
+            if child.is_dir() and child.name in possible_folders:
+                return WorkStructureVersion.V1
+
+        # Check for the second structure type
+        image_group_name_re = re.compile(rf"{w_path.name}-I.*")
+        for child in w_path.iterdir():
+            if child.is_dir() and image_group_name_re.fullmatch(child.name):
+                for sub_child in child.iterdir():
+                    if sub_child.is_dir() and sub_child.name in possible_folders:
+                        return WorkStructureVersion.V2
+
+        return WorkStructureVersion.V0
+
+def empty_contents(path: Path) -> None:
+    """
+    Empty the contents of a directory
+    :param path:
+    :return:
+    """
+    if os.path.exists(path) and os.path.isdir(path):
+        for p in os.scandir(path):
+            if p.is_dir():
+                shutil.rmtree(p)
+            elif p.is_file():
+                os.remove(p.path)
+
+
+def iter_or_return(obj):
+    """
+    Github Copilot suggestion to return an object or the next
+    iteration
+    :param obj: onput
+    :return: input of input is not iterable, else next iteration
+    """
+    try:
+        iter(obj)
+    except TypeError:
+        yield obj
+    else:
+        yield from obj
 
 
 # DEBUG: Local
