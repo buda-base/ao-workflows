@@ -13,10 +13,8 @@ DOWNLOAD_PATH: Where the files live before they are processed
 PROCESSING_PATH: Where the files are moved to when they are in the queue to be processed.
 
 """
-import fcntl
+
 import fnmatch
-import os
-import shutil
 # This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
 # to drop back to datetime.timedelta
 from datetime import timedelta
@@ -28,11 +26,11 @@ from airflow.decorators import task
 from airflow.exceptions import AirflowException
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
-from airflow.sensors.filesystem import FileSensor
 from bag import bag_ops
 from pendulum import DateTime, Timezone
 from util_lib.version import bdrc_util_version
 
+import SyncOptionBuilder as sb
 from staging_utils import *
 
 # Do Once only. Seems to survive process boundaries.
@@ -87,6 +85,22 @@ _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp")
 _DOCKER_DEST_PATH_ROOT: str = "/mnt"
 _PROD_DEST_PATH_ROOT: str = _DOCKER_DEST_PATH_ROOT
 
+# SYNC config
+#
+# Use this file if it is under the Work root
+DEFAULT_SYNC_YAML_PATH: Path = Path("config", "sync.yml")
+DEFAULT_SYNC_YAML: str = """
+audit:
+    # Empty means run all tests
+    # Fill in with python array: [ 'test1','test2' ...]
+    pre: []
+    post: []
+sync:
+    archive: true
+    web: true
+    replace: false
+"""
+
 # ------------- CONFIG CONST  ----------------------------
 
 # region ------------   CONST  ----------------------------
@@ -99,7 +113,7 @@ SYNC_TZ_LABEL: str = 'America/New_York'
 
 # --------------------- DEV|PROD CONFIG  ---------------
 # Loads the values set in MY_.....
-# Of course, you do not want to call side-effect inducing functions in setting this
+# Of course, you do not want to call side effect inducing functions in setting this
 # See the dev section below
 DAG_TIME_DELTA: timedelta = _PROD_TIME_SCHEDULE
 DAG_START_DATETIME = _PROD_DAG_START_DATE
@@ -148,12 +162,6 @@ PROCESSING_LOW_LIMIT: int = 2
 # Maximum number of files to be in the processing queue
 PROCESSING_HIGH_LIMIT: int = 20
 
-# For synchronized running.
-import tempfile
-
-# mkstemp returns a tuple. The first is the fd, the other is the path.
-LOCK_FILE: str = tempfile.NamedTemporaryFile('wb').name
-
 os.makedirs(READY_PATH, exist_ok=True)
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 os.makedirs(STAGING_PATH, exist_ok=True)
@@ -175,49 +183,11 @@ _DB_CONFIG: Path = Path.home() / ".config" / "bdrc" / "db_apps.config" if not Pa
 prod_level: str = MY_DB
 # used in syncing
 util_ver: str
+# noinspection PyBroadException
 try:
     util_ver: str = bdrc_util_version()
 except:
     util_ver = "Unknown"
-
-
-class CollectingSingleFileSensor(FileSensor):
-    """
-    Returns a single file from a pool of readies. downstream users have to delete this file
-    """
-
-    def acquire_lock(self):
-        lock_file = open(LOCK_FILE, 'w')
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
-        return lock_file
-
-    def release_lock(self, lock_file):
-        fcntl.flock(lock_file, fcntl.LOCK_UN)
-        lock_file.close()
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.file_dir: Path = Path(kwargs['filepath']).parent
-
-    def poke(self, context):
-        import glob
-        lock_file = self.acquire_lock()
-        try:
-            matched_files = glob.glob(self.filepath)
-            if matched_files:
-                # First, pick one, hide it from other sensors by moving it to in process.
-                # Return the in_process version
-
-                target_match = Path(matched_files[0])
-                # Fully qualify target path. YGNI (You're going to need it)
-                target_path = PROCESSING_PATH / target_match.name
-                shutil.move(target_match, target_path)
-                # push the moved file onto the response stack
-                context['ti'].xcom_push(key='collected_file', value=str(target_path))
-                return True
-            return False
-        finally:
-            self.release_lock(lock_file)
 
 
 def add_if_work(unz: Path, works: [Path]) -> None:
@@ -231,10 +201,11 @@ def add_if_work(unz: Path, works: [Path]) -> None:
         works.append(unz)
     else:
         for subdir in os.scandir(unz):
-            # Tranform dirEntry into Path
+            # Transform dirEntry into Path
             if subdir.is_dir() and WorkStructureVersion.detect_work(Path(subdir)) >= WorkStructureVersion.V1:
                 # transform a dir entry into a Path
                 works.append(Path(subdir))
+
 
 # Write a method that can take either a list of Paths or a single PathLike parameter
 # and return a list of Paths
@@ -353,7 +324,7 @@ def debag(**context) -> [str]:
     """
 
     # DEBUG_DEV
-    # return ['/home/airflow/bdrc/data/work/W1NLM4700']
+    # return ["/home/airflow/bdrc/data/work/W1NLM4700"]
     # Get the file
     detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
 
@@ -379,7 +350,7 @@ def debag(**context) -> [str]:
     # in a bag as a unitary bag, which makes it impossible to separate out the bags
     # for each work.
     #
-    # This turns out to be problematic for furture bagging, because debag sees
+    # This turns out to be problematic for future bagging, because debag sees
     # Work/Work.bag as a bag, but without any contents in the 'data/'
     # so only copy the manifest and tag files
     for db_down in debagged_downs:
@@ -453,6 +424,7 @@ def sync(**context):
     for a_down in iter_or_return(downs):
         # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for down in iter_or_return(a_down):
+            directives_dict = sb.get_sync_options(Path(down, DEFAULT_SYNC_YAML_PATH), DEFAULT_SYNC_YAML)
             # Build the sync command
             # The moustaches {{}} inject a literal, not an fString resolution
             bash_command = f"""
@@ -484,7 +456,7 @@ def cleanup(**context):
     p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
 
     for a_down in iter_or_return(p_to_rm):
-    # need an extra layer of indirection, for multi-zip or multi-bag-entries
+        # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for p in iter_or_return(a_down):
             pp(f"removing {str(p)}")
             shutil.rmtree(p)
@@ -519,6 +491,7 @@ with DAG('down_scheduled',
     )
 
     wait_for_file = CollectingSingleFileSensor(
+        processing_path=PROCESSING_PATH,
         task_id=WAIT_FOR_FILE_TASK_ID,
         filepath=f"{str(READY_PATH)}/{ZIP_GLOB}",
         poke_interval=10,
@@ -554,7 +527,8 @@ with DAG('feeder',
                 if _p.is_file() and fnmatch.fnmatch(_p.name, ZIP_GLOB):
                     in_process_queue_bag_count += 1
 
-        pp(f"Looking for {ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
+        pp(f"Looking for {ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} "
+           f"PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
         if in_process_queue_bag_count < PROCESSING_LOW_LIMIT:
             n_to_feed: int = PROCESSING_HIGH_LIMIT - in_process_queue_bag_count
             to_move: [] = []
@@ -578,5 +552,9 @@ with DAG('feeder',
 if __name__ == '__main__':
     # noinspection PyArgumentList
     # feeder.test()
+
+    test_yaml = """
+    
+    """
     get_one.test()
     # gs_dag.cli()

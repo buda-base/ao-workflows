@@ -7,3 +7,4 @@ apache-airflow-providers-amazon
 # requests==2.31 generates this:
 # ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_' (/Users/jimk/dev/ao-workflows/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)
 # requests==2.28.2
+pyyaml
