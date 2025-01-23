@@ -19,15 +19,119 @@ Synopsis:syncOneWork.sh  [ -h ] [-A] [-W] [ -a archiveParent ] [ -w webParent ] 
       this module populates the -A -a -W -w flags, and declares any environment variables represented by the parser
       (such as
 """
+import os
 from pathlib import Path
+from pendulum import DateTime
+from pprint import pprint
 
-import yaml
 
-class SyncOptionsBuilder():
+from staging_utils import get_db_config
+
+
+class SyncOptionsBuilder:
     """
     Transforms a yaml into a dictionary/?list? of syncOneWork.sh flags
 
     """
+
+
+# ---------------   CONSTS  --------------------------------
+# See docker-compose.yml for the location of the system logs. Should be a bind mount point
+# ./bdr.log:/mnt/processing/logs
+APP_LOG_ROOT = Path.home() / "bdrc" / "log"
+
+util_ver: str
+from util_lib.version import bdrc_util_version
+
+# noinspection PyBroadException
+try:
+    util_ver: str = bdrc_util_version()
+except:
+    util_ver = "Unknown"
+
+# SYNC config
+#
+# Use this file if it is under the Work root
+DEFAULT_SYNC_YAML_PATH: Path = Path("config", "sync.yml")
+DEFAULT_SYNC_YAML: str = """
+audit:
+    # Empty means run all tests, no extra args
+    # Fill in with python array: [ '-D','Bladdbla=yyssw' ,'-T','Test1,Test2,Test3' ...]
+    pre: []
+    post: []
+sync:
+    archive: true
+    web: true
+    replace: false
+    update_web: true
+"""
+
+# map the AYAML to syncOneWork environment variables
+DEFAULT_YAML_ENVS: {} = {'pre': 'LOCAL_AUDIT_OPTIONS',
+                         'post': 'REPO_AUDIT_OPTIONS',
+                         # special case - see syncAnywhere_options
+                         'update_web': 'NO_REFRESH_WEB'
+                         }
+
+# Example yaml. this is the mapping of yaml defaults to environment variables and command arguments
+#     test = """
+# audit:
+#     # Empty means run all tests
+#     # Fill in with python array: [ '-D' 'bladd'test1','test2' ...]
+#     pre: [] -> env: LOCAL_AUDIT_OPTIONS
+#     post: [] -> env: REPO_AUDIT_OPTIONS
+# sync:
+#     archive: true -> "-a"
+#     web: true -> "-w"
+#     replace: false -> "-A -W" if true
+#    special case hack
+#     update_web: false -> env: NO_REFRESH_WEB=True
+# """
+# N.B. depends on syncOneWork
+SYNC_COMMAND_ARG_MAP: {} = {
+    '-a': None,
+    '-w': None
+}
+
+
+# ---------------   /CONSTS --------------------------------
+
+def build_arg_map(archive_dest: os.PathLike, web_dest: str, arg_map: {}):
+    """
+    Fill in defaults from caller
+    :param archive_dest: where archives go
+    :param web_dest: where web images go
+    :param arg_map: dictionary to update
+    :return:
+    """
+    arg_map['-a'] = str(archive_dest)
+    arg_map['-w'] = str(web_dest)
+
+
+# +3 GitHub Copilot
+def deep_search(dictionary, key):
+    """
+    Recursively search for a key in a dictionary or in dictionaries contained in the values.
+    :param dictionary: The dictionary to search.
+    :param key: The key to search for.
+    :return: A list of values associated with the key.
+    """
+    results = []
+
+    def search(d):
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if k == key:
+                    results.append(v)
+                if isinstance(v, dict):
+                    search(v)
+                elif isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, dict):
+                            search(item)
+
+    search(dictionary)
+    return results
 
 
 def get_sync_options(sync_config_path: Path, default_config: str) -> {}:
@@ -35,15 +139,210 @@ def get_sync_options(sync_config_path: Path, default_config: str) -> {}:
     Parse the yaml file, merging it with the dictionary resulting from the default. values in the
     sync_config_path take precedence over the default_config, but the sync_config_path yaml need not
     be complete
-    :param sync_path:
-    :param default_config:
-    :return:
+    :param sync_config_path: Path to user provided sync overrides
+    :param default_config: the default yaml as a string
+    :return: the default_config dictionary with the sync_config_path values merged in
     """
     import yaml
     base_doc = yaml.safe_load(default_config)
     if sync_config_path and os.path.exists(sync_config_path):
         override_doc = yaml.safe_load(sync_config_path.read_text())
-        # +3 github copilot
-        base_doc.update(override_doc)
+        # +3 github copilot, but not quite - overwrites values.
+        for master_key in ('audit', 'sync'):
+            if base_doc.get(master_key) and override_doc.get(master_key):
+                base_doc[master_key].update(override_doc[master_key])
 
     return base_doc
+
+
+def build_sync_env(execution_date, prod_level: str, db_config: os.PathLike) -> dict:
+    """
+    See sync task
+       You have to emulate this stanza in bdrcSync.sh to set logging paths correctly
+    # tool versions
+    export logDipVersion=$(log_dip -v)
+    export auditToolVersion=$(audit-tool -v)
+
+    # date/time tags
+    export jobDateTime=$(date +%F_%H.%M.%S)
+    export jobDate=$(echo $jobDateTime | cut -d"_" -f1)
+    export jobTime=$(echo $jobDateTime | cut -d"_" -f2)
+
+    # log dirs
+    # NOTE: these are dependent on logDir which is declared in the config file
+    export syncLogDateTimeDir="$logDir/sync-logs/$jobDate/$jobDateTime"
+    export syncLogDateTimeFile="$syncLogDateTimeDir/sync-$jobDateTime.log"
+    export syncLogTempDir="$syncLogDateTimeDir/tempFiles"
+
+    export auditToolLogDateTimeDir="$logDir/audit-test-logs/$jobDate/$jobDateTime"
+    """
+
+    # set up times
+    year, month, day, hour, minute, second, *_ = execution_date.timetuple()
+
+    # sh: $(date +%F_%H.%M.%S)
+    job_time: str = f"{hour:0>2}.{minute:0>2}.{second:0>2}"
+    # sh: $(date +%F)
+    job_date: str = f"{year}-{month:0>2}-{day:0>2}"
+    # $(date +%F_%H.%M.%S)
+    job_date_time: str = f"{job_date}_{job_time}"
+
+    # DEBUG: make local while testing
+    # _root: Path = Path.home() / "dev" / "tmp" / "Projects" / "airflow" / "glacier_staging_to_sync" / "log"
+    logDir: Path = APP_LOG_ROOT
+    sync_log_home: Path = logDir / "sync-logs" / job_date / job_date_time
+    sync_log_file = sync_log_home / f"sync-{job_date_time}.log"
+    audit_log_home: Path = logDir / "audit-test-logs" / job_date / job_date_time
+    os.makedirs(sync_log_home, exist_ok=True)
+    os.makedirs(audit_log_home, exist_ok=True)
+
+    env:{} = {
+        "DEBUG_SYNC": "true",
+        "DB_CONFIG": get_db_config(prod_level),
+        "hostName": "airflow_platform",
+        "userName": "airflow_platform_user",
+        "logDipVersion": util_ver,
+        "auditToolVersion": "unknown",
+        "jobDateTime": job_date_time,
+        "jobDate": job_date,
+        "jobTime": job_time,
+        "auditToolLogDateTimeDir": str(audit_log_home),
+        "syncLogDateTimeDir": str(sync_log_home),
+        "syncLogDateTimeFile": str(sync_log_file),
+        "syncLogTempDir": str(sync_log_home / "tempFiles"),
+        "PATH": os.getenv("PATH")
+    }
+
+    # This is a hack to avoid the BUDA refresh
+    if os.getenv("PYDEV_DEBUG") == "YES":
+        env["NO_REFRESH_WEB"] = "YES"
+
+    return env
+
+
+def syncAnywhere_options(sync_options: {}, yaml_map) -> {}:
+    """
+    Build environment variables implied in the map. Returns a yaml parsed like dictionary
+    { 'env': { 'LOCAL_AUDIT_OPTIONS': 'value', 'REPO_AUDIT_OPTIONS': 'value', 'NO_REFRESH_WEB': 'value' },
+    'sync': [ '-a' , '-w' , '-A -W''}
+    """
+
+    rd: {} = {}
+    env = {}
+
+    # Look in directive_map (user input or default) for the keys in the yaml_map
+    # you have to do an in depth search
+    for target_key, value in yaml_map.items():
+        target_key_values: [] = deep_search(sync_options, target_key)
+        if not target_key_values:
+            continue
+        # if the value is empty, we don't want to emit it.
+        # We only want to emit a scalar value
+        # And we want it to be a str, otherwise the Python subprocess parser:
+        #     env_list.append(k + b'=' + os.fsencode(v))
+        #             ^^^^^^^^^^^^^^
+        # File "<frozen os>", line 812, in fsencode
+        # TypeError: expected str, bytes or os.PathLike object, not bool
+        #
+        # HACK ALERT: the 'update_web' key is a special case - it should
+        # set the NO_REFRESH_WEB only if its value is 'False'
+        if target_key == 'update_web':
+            if (len(target_key_values) == 1
+                    and target_key_values[0] == 'False'):
+                env[DEFAULT_YAML_ENVS[value]] = 'Yes'
+        else:
+            if len(target_key_values) == 1 and target_key_values[0]:
+                env[value] = str(target_key_values[0])
+
+    # Create the env key
+    rd['env'] = env
+
+    # Get the archive command value
+    _ = deep_search(sync_options, 'archive')
+    if _:
+        rd['sync'] = ['-a']
+    else:
+        rd['sync'] = []
+    _ = deep_search(sync_options, 'web')
+    if _:
+        rd['sync'].append('-w')
+
+    # The relpace key has a boolean arg
+    _ = deep_search(sync_options, 'replace')
+    if _ and _[0]:
+        rd['sync'].append('-A -W')
+    return rd
+
+
+def build_dest_args(cmd_params: [], cmd_param_map: {}) -> str:
+    """
+    Build destinations arguments to syncOneWork.sh
+    :param cmd_params: given parameters
+    :param cmd_param_map: maps parameters to arguments
+    :return: assembled proper command string
+    """
+    base: str = ''
+    for key in cmd_params:
+        # Not all possible commands have argumentsm so use .get()
+        # If any of the keys would result in multiple token in bash, wrap them up
+        sh_able_key = encode_for_bash(cmd_param_map.get(key, ''))
+        base += f" {key} {sh_able_key}"
+    return base
+
+
+def encode_for_bash(string):
+    import shlex
+    return shlex.quote(string)
+
+
+def build_sync(start_time: DateTime, prod_level, src: os.PathLike, archive_dest: os.PathLike,
+               web_dest: str) -> ():
+    """
+    Build command and environment for airflow BashOperator
+    :return: (environment, command_string
+    """
+    build_arg_map(archive_dest, web_dest, SYNC_COMMAND_ARG_MAP)
+    directives_dict = get_sync_options(Path(src, DEFAULT_SYNC_YAML_PATH), DEFAULT_SYNC_YAML)
+    # rebuild the env for each work - the local config file may have something to add
+    env: {} = build_sync_env(start_time, prod_level, get_db_config(prod_level))
+
+    # Get extra environment and command strings from the sync config
+    command_extras: [] = syncAnywhere_options(directives_dict, DEFAULT_YAML_ENVS)
+    if command_extras.get('env'):
+        env.update(command_extras['env'])
+    # Build the sync command
+    # Build the sync destination strings
+    dest_cmd_args: str = build_dest_args(command_extras.get('sync'), SYNC_COMMAND_ARG_MAP)
+    # HACK ALERT: do not quote {dest_cmd_args} the constants have to take care of this
+    # The moustaches {{}} inject a literal, not an fString resolution
+    bash_command = f"""
+#!/usr/bin/env bash
+set -vx
+which syncOneWork.sh
+echo $PATH
+syncOneWork.sh -s $(mktemp) {dest_cmd_args} "{src}" 2>&1 | tee $syncLogDateTimeFile
+rc=${{PIPESTATUS[0]}}
+exit $rc
+"""
+    return env, bash_command
+
+
+if __name__ == '__main__':
+    pass
+    from pprint import pp
+
+    pp(f"Empty string: {encode_for_bash('')}")
+    pp(f"Live string {encode_for_bash('helloWorld')}")
+    pp(f"space string {encode_for_bash('hello World')}")
+    # pass
+
+#     example_dict = {
+#         'a': 1,
+#         'b': {'c': 2, 'd': {'e': 3}},
+#         'f': [{'g': 4}, {'h': {'i': 5}}],
+#         'j': {'k': [{'l': 6}, {'m': 7}]}
+#     }
+#
+#     print(deep_search(example_dict, 'e'))  # Output: [3]
+#     print(deep_search(example_dict, 'g'))  # Output: [4]
+#     print(deep_search(example_dict, 'l'))  # Output: [6]

@@ -28,7 +28,8 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
 from bag import bag_ops
 from pendulum import DateTime, Timezone
-from util_lib.version import bdrc_util_version
+from pprint import pprint as pp
+
 
 import SyncOptionBuilder as sb
 from staging_utils import *
@@ -82,24 +83,15 @@ _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(weeks=1)
 
 # Sync parameters
 _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp")
+#
+# Use S3Path, if we ever use this var. For now, but this layer is just passing it on
+_DEV_WEB_DEST: str = "s3://manifest.bdrc.org/Works"
+
 _DOCKER_DEST_PATH_ROOT: str = "/mnt"
 _PROD_DEST_PATH_ROOT: str = _DOCKER_DEST_PATH_ROOT
-
-# SYNC config
 #
-# Use this file if it is under the Work root
-DEFAULT_SYNC_YAML_PATH: Path = Path("config", "sync.yml")
-DEFAULT_SYNC_YAML: str = """
-audit:
-    # Empty means run all tests
-    # Fill in with python array: [ 'test1','test2' ...]
-    pre: []
-    post: []
-sync:
-    archive: true
-    web: true
-    replace: false
-"""
+# See ~/dev/archive-ops/scripts/syncAnywhere/sample.config
+_PROD_WEB_DEST: str = "s3://archive.tbrc.org/Works"
 
 # ------------- CONFIG CONST  ----------------------------
 
@@ -120,16 +112,21 @@ DAG_START_DATETIME = _PROD_DAG_START_DATE
 DAG_END_DATETIME = _PROD_DAG_START_DATE.add(weeks=2)
 MY_DB: str = _PROD_DB
 MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
+MY_WEB_DEST: str = _PROD_WEB_DEST
 
-DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
-DAG_START_DATETIME = _DEV_DAG_START_DATE
-DAG_END_DATETIME = _DEV_DAG_END_DATE
-MY_DB = _DEV_DB
-# OK to leave local - $ARCH_ROOT in the .env makes this safe
-MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
+# When debugging in an IDE, always set a breakpoint here,
+# just to ensure you're not running in production
+# Of course, you have to set the env var PYDEV_DEBUG
+if os.getenv("PYDEV_DEBUG") == "YES":
+    DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
+    DAG_START_DATETIME = _DEV_DAG_START_DATE
+    DAG_END_DATETIME = _DEV_DAG_END_DATE
+    MY_DB = _DEV_DB
+    # OK to leave local - $ARCH_ROOT in the .env makes this safe
+    MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
+    MY_WEB_DEST = _DEV_WEB_DEST
 
 # --------------------- /DEV|PROD CONFIG  ---------------
-
 # --------------- SETUP DAG    ----------------
 #
 # this section configures the DAG filesystem. Coordinate with bdrc-docker-compose.yml
@@ -168,27 +165,14 @@ os.makedirs(STAGING_PATH, exist_ok=True)
 os.makedirs(PROCESSING_PATH, exist_ok=True)
 os.makedirs(RETENTION_PATH, exist_ok=True)
 
-# See docker-compose.yml for the location of the system logs. Should be a bind mount point
-# ./bdr.log:/mnt/processing/logs
-APP_LOG_ROOT = Path.home() / "bdrc" / "log"
-
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
 DEST_PATH: Path = Path(MY_DEST_PATH_ROOT, "Archive")
-# Non docker
-_DB_CONFIG: Path = Path.home() / ".config" / "bdrc" / "db_apps.config" if not Path.exists(
-    Path("/run/secrets/db_apps")) else Path("/run/secrets/db_apps")
 
-# select a level (used in syncing)
-
+# select a level for db ops (see staging_utils.get_db_config)
 prod_level: str = MY_DB
-# used in syncing
-util_ver: str
-# noinspection PyBroadException
-try:
-    util_ver: str = bdrc_util_version()
-except:
-    util_ver = "Unknown"
 
+
+# ----------------------   /SETUP DAG      -------------------------
 
 def add_if_work(unz: Path, works: [Path]) -> None:
     """
@@ -238,65 +222,6 @@ def stage(detected) -> Path:
     #    pp(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
     os.makedirs(STAGING_PATH, exist_ok=True)
     return STAGING_PATH
-
-
-def build_sync_env(execution_date) -> dict:
-    """
-    See sync task
-       You have to emulate this stanza in bdrcSync.sh to set logging paths correctly
-    # tool versions
-    export logDipVersion=$(log_dip -v)
-    export auditToolVersion=$(audit-tool -v)
-
-    # date/time tags
-    export jobDateTime=$(date +%F_%H.%M.%S)
-    export jobDate=$(echo $jobDateTime | cut -d"_" -f1)
-    export jobTime=$(echo $jobDateTime | cut -d"_" -f2)
-
-    # log dirs
-    # NOTE: these are dependent on logDir which is declared in the config file
-    export syncLogDateTimeDir="$logDir/sync-logs/$jobDate/$jobDateTime"
-    export syncLogDateTimeFile="$syncLogDateTimeDir/sync-$jobDateTime.log"
-    export syncLogTempDir="$syncLogDateTimeDir/tempFiles"
-
-    export auditToolLogDateTimeDir="$logDir/audit-test-logs/$jobDate/$jobDateTime"
-    """
-
-    # set up times
-    year, month, day, hour, minute, second, *_ = execution_date.timetuple()
-
-    # sh: $(date +%F_%H.%M.%S)
-    job_time: str = f"{hour:0>2}.{minute:0>2}.{second:0>2}"
-    # sh: $(date +%F)
-    job_date: str = f"{year}-{month:0>2}-{day:0>2}"
-    # $(date +%F_%H.%M.%S)
-    job_date_time: str = f"{job_date}_{job_time}"
-
-    # DEBUG: make local while testing
-    # _root: Path = Path.home() / "dev" / "tmp" / "Projects" / "airflow" / "glacier_staging_to_sync" / "log"
-    logDir: Path = APP_LOG_ROOT
-    sync_log_home: Path = logDir / "sync-logs" / job_date / job_date_time
-    sync_log_file = sync_log_home / f"sync-{job_date_time}.log"
-    audit_log_home: Path = logDir / "audit-test-logs" / job_date / job_date_time
-    os.makedirs(sync_log_home, exist_ok=True)
-    os.makedirs(audit_log_home, exist_ok=True)
-
-    return {
-        "DEBUG_SYNC": "true",
-        "DB_CONFIG": f"{prod_level}:{str(_DB_CONFIG)}",
-        "hostName": "airflow_platform",
-        "userName": "airflow_platform_user",
-        "logDipVersion": util_ver,
-        "auditToolVersion": "unknown",
-        "jobDateTime": job_date_time,
-        "jobDate": job_date,
-        "jobTime": job_time,
-        "auditToolLogDateTimeDir": str(audit_log_home),
-        "syncLogDateTimeDir": str(sync_log_home),
-        "syncLogDateTimeFile": str(sync_log_file),
-        "syncLogTempDir": str(sync_log_home / "tempFiles"),
-        "PATH": os.getenv("PATH")
-    }
 
 
 # ----------------------   airflow task declarations  -------------------------
@@ -408,35 +333,20 @@ def sync(**context):
     :param context: airflow context
     """
     from pendulum import DateTime
+    from pprint import pp
     # DEBUG_DEV
     # return 0
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
 
     downs = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
-
-    env: {} = build_sync_env(local_start)
-
-    pp(env)
-
     pp(downs)
     # downs could be a list of lists, if a bag or a zip file contained multiple works
     for a_down in iter_or_return(downs):
         # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for down in iter_or_return(a_down):
-            directives_dict = sb.get_sync_options(Path(down, DEFAULT_SYNC_YAML_PATH), DEFAULT_SYNC_YAML)
-            # Build the sync command
-            # The moustaches {{}} inject a literal, not an fString resolution
-            bash_command = f"""
-            #!/usr/bin/env bash
-            set -vx
-            which syncOneWork.sh
-            echo $PATH
-            syncOneWork.sh -a "{str(DEST_PATH)}"  -s $(mktemp) "{down}" 2>&1 | tee $syncLogDateTimeFile
-            rc=${{PIPESTATUS[0]}}
-            exit $rc
-            """
-
+            env, bash_command = sb.build_sync(start_time=local_start, prod_level=MY_DB, src=down,
+                                              archive_dest=DEST_PATH, web_dest=MY_WEB_DEST)
             airflow.operators.bash.BashOperator(
                 task_id="sync_debag",
                 bash_command=bash_command,

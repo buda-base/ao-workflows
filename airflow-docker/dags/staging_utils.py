@@ -41,7 +41,7 @@ class CollectingSingleFileSensor(FileSensor):
         fcntl.flock(lock_file, fcntl.LOCK_UN)
         lock_file.close()
 
-    def __init__(self, processing_path: Path *args, **kwargs):
+    def __init__(self, processing_path: Path, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.file_dir: Path = Path(kwargs['filepath']).parent
         self.processing_path = processing_path
@@ -387,19 +387,4 @@ if __name__ == '__main__':
     # pp(work_rid_from_aws_key('bla.goy.evitch'))
     # pp(work_rid_from_aws_key('s3:/lsdfsdf/bla.goy.evitch'))
 
-    test_yaml: str = """
-    audit:
-        # Empty means run all tests
-        # Fill in with python array: [ 'test1','test2' ...]
-        pre: []
-        post: []
-
-    sync:
-      archive: true
-      web: true
-      replace: false
-    """
-    dd = get_sync_options(None, test_yaml)
-    from pprint import pp
-    pp(dd)
 
