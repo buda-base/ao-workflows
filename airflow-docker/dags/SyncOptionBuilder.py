@@ -318,8 +318,10 @@ def build_sync(start_time: DateTime, prod_level, src: os.PathLike, archive_dest:
     bash_command = f"""
 #!/usr/bin/env bash
 set -vx
-which syncOneWork.sh
-echo $PATH
+pip show bdrc-util
+pip show bdrc-db-lib
+# which syncOneWork.sh
+# echo $PATH
 syncOneWork.sh -s $(mktemp) {dest_cmd_args} "{src}" 2>&1 | tee $syncLogDateTimeFile
 rc=${{PIPESTATUS[0]}}
 exit $rc

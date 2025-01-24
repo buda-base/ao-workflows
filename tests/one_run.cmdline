@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Translate the following python dictionary into a series of bash export commands
+
+#'DB_CONFIG': 'qa:~/.config/bdrc/db_apps.config',
+#'DEBUG_SYNC': 'true',
+#'NO_REFRESH_WEB': 'YES',
+#'PATH': '/Users/jimk/dev/ao-workflows/venv/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/jimk/.jenv/shims:/Users/jimk/.nvm/versions/node/v12.16.3/bin:/Library/Java/JavaVirtualMachines/jdk-11.0.8.jdk/Contents/Home/bin:/Users/jimk/bin:/Users/jimk/.local/bin:/usr/local/opt/coreutils/libexec/gnubin:/usr/local/opt/sqlite/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Library/Apple/usr/bin:/Applications/audit-tool.app/Contents/MacOS',
+#          'auditToolLogDateTimeDir': '/Users/jimk/bdrc/log/audit-test-logs/2025-01-24/2025-01-24_11.51.36',
+#          'auditToolVersion': 'unknown', 'hostName': 'airflow_platform', 'jobDate': '2025-01-24',
+#          'jobDateTime': '2025-01-24_11.51.36', 'jobTime': '11.51.36', 'logDipVersion': 'bdrc-util 1.0.11',
+#          'syncLogDateTimeDir': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36',
+#          'syncLogDateTimeFile': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/sync-2025-01-24_11.51.36.log',
+#          'syncLogTempDir': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/tempFiles',
+#          'userName': 'airflow_platform_user'
+
+export DB_CONFIG='qa:~/.config/bdrc/db_apps.config'
+export DEBUG_SYNC='true'
+export NO_REFRESH_WEB='YES'
+# export PATH='/Users/jimk/dev/ao-workflows/venv/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/jimk/.jenv/shims:/Users/jimk/.nvm/versions/node/v12.16.3/bin:/Library/Java/JavaVirtualMachines/jdk-11.0.8.jdk/Contents/Home/bin:/Users/jimk/bin:/Users/jimk/.local/bin:/usr/local/opt/coreutils/libexec/gnubin:/usr/local/opt/sqlite/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Library/Apple/usr/bin:/Applications/audit-tool.app/Contents/MacOS'
+export auditToolLogDateTimeDir='/Users/jimk/bdrc/log/audit-test-logs/2025-01-24/2025-01-24_11.51.36'
+export auditToolVersion='unknown'
+export hostName='airflow_platform'
+export jobDate='2025-01-24'
+export jobDateTime='2025-01-24_11.51.36'
+export jobTime='11.51.36'
+export logDipVersion='bdrc-util 1.0.11'
+export syncLogDateTimeDir='/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36'
+export syncLogDateTimeFile='/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/sync-2025-01-24_11.51.36.log'
+export syncLogTempDir='/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/tempFiles'
+export userName='airflow_platform_user'
+
+which syncOneWork.sh
+echo $PATH
+syncOneWork.sh -s $(mktemp)  -w s3://manifest.bdrc.org/Works "/Users/jimk/bdrc/data/work/W1AC6" 2>&1 | tee $syncLogDateTimeFile
+rc=${PIPESTATUS[0]}
+exit $rc

@@ -18,6 +18,7 @@ import fnmatch
 # This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
 # to drop back to datetime.timedelta
 from datetime import timedelta
+from pprint import pprint as pp
 from typing import Union, List
 
 import airflow.operators.bash
@@ -28,8 +29,6 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
 from bag import bag_ops
 from pendulum import DateTime, Timezone
-from pprint import pprint as pp
-
 
 import SyncOptionBuilder as sb
 from staging_utils import *
@@ -466,5 +465,14 @@ if __name__ == '__main__':
     test_yaml = """
     
     """
+    ee = {'DB_CONFIG': 'qa:~/.config/bdrc/db_apps.config', 'DEBUG_SYNC': 'true', 'NO_REFRESH_WEB': 'YES',
+          'PATH': '/Users/jimk/dev/ao-workflows/venv/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/jimk/.jenv/shims:/Users/jimk/.nvm/versions/node/v12.16.3/bin:/Library/Java/JavaVirtualMachines/jdk-11.0.8.jdk/Contents/Home/bin:/Users/jimk/bin:/Users/jimk/.local/bin:/usr/local/opt/coreutils/libexec/gnubin:/usr/local/opt/sqlite/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Library/Apple/usr/bin:/Applications/audit-tool.app/Contents/MacOS',
+          'auditToolLogDateTimeDir': '/Users/jimk/bdrc/log/audit-test-logs/2025-01-24/2025-01-24_11.51.36',
+          'auditToolVersion': 'unknown', 'hostName': 'airflow_platform', 'jobDate': '2025-01-24',
+          'jobDateTime': '2025-01-24_11.51.36', 'jobTime': '11.51.36', 'logDipVersion': 'bdrc-util 1.0.11',
+          'syncLogDateTimeDir': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36',
+          'syncLogDateTimeFile': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/sync-2025-01-24_11.51.36.log',
+          'syncLogTempDir': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/tempFiles',
+          'userName': 'airflow_platform_user'}
     get_one.test()
     # gs_dag.cli()
