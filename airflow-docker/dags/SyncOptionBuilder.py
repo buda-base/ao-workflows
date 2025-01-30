@@ -21,9 +21,9 @@ Synopsis:syncOneWork.sh  [ -h ] [-A] [-W] [ -a archiveParent ] [ -w webParent ] 
 """
 import os
 from pathlib import Path
-from pendulum import DateTime
-from pprint import pprint
 
+import yaml
+from pendulum import DateTime
 
 from staging_utils import get_db_config
 
@@ -108,30 +108,37 @@ def build_arg_map(archive_dest: os.PathLike, web_dest: str, arg_map: {}):
     arg_map['-w'] = str(web_dest)
 
 
+deep_search_results: object = None
+
 # +3 GitHub Copilot
-def deep_search(dictionary, key):
+def deep_search(dictionary, key) -> object:
     """
     Recursively search for a key in a dictionary or in dictionaries contained in the values.
     :param dictionary: The dictionary to search.
     :param key: The key to search for.
-    :return: A list of values associated with the key.
+    :return: the first value found for the key
     """
-    results = []
 
+    global deep_search_results
     def search(d):
+        global deep_search_results
         if isinstance(d, dict):
-            for k, v in d.items():
+            for k, v in d.items() :
+                if deep_search_results:
+                    break
                 if k == key:
-                    results.append(v)
+                    deep_search_results = v
+                    return
                 if isinstance(v, dict):
                     search(v)
                 elif isinstance(v, list):
                     for item in v:
                         if isinstance(item, dict):
                             search(item)
-
+    deep_search_results = None
     search(dictionary)
-    return results
+    return deep_search_results
+    # return results
 
 
 def get_sync_options(sync_config_path: Path, default_config: str) -> {}:
@@ -147,12 +154,28 @@ def get_sync_options(sync_config_path: Path, default_config: str) -> {}:
     base_doc = yaml.safe_load(default_config)
     if sync_config_path and os.path.exists(sync_config_path):
         override_doc = yaml.safe_load(sync_config_path.read_text())
-        # +3 github copilot, but not quite - overwrites values.
-        for master_key in ('audit', 'sync'):
-            if base_doc.get(master_key) and override_doc.get(master_key):
-                base_doc[master_key].update(override_doc[master_key])
+        merge_yaml(base_doc, override_doc)
 
     return base_doc
+
+
+def merge_yaml(base: {}, override: {}):
+    """
+    Merge two yaml files, base and override. If a value appears in override, replace it in base.
+    Do this search recursivley through all levels of the yaml files
+    :param base: base yaml
+    :param override: override yaml
+    :return: merged yaml file in :param base
+    """
+    for key, value in override.items():
+        if isinstance(value, dict):
+            # get node from base
+            node = base.setdefault(key, {})
+            # merge recursively
+            merge_yaml(node, value)
+        else:
+            # replace or add value
+            base[key] = value
 
 
 def build_sync_env(execution_date, prod_level: str, db_config: os.PathLike) -> dict:
@@ -196,7 +219,7 @@ def build_sync_env(execution_date, prod_level: str, db_config: os.PathLike) -> d
     os.makedirs(sync_log_home, exist_ok=True)
     os.makedirs(audit_log_home, exist_ok=True)
 
-    env:{} = {
+    env: {} = {
         "DEBUG_SYNC": "true",
         "DB_CONFIG": get_db_config(prod_level),
         "hostName": "airflow_platform",
@@ -246,13 +269,13 @@ def syncAnywhere_options(sync_options: {}, yaml_map) -> {}:
         #
         # HACK ALERT: the 'update_web' key is a special case - it should
         # set the NO_REFRESH_WEB only if its value is 'False'
+        # yaml should be   update_web: { true | false }
         if target_key == 'update_web':
-            if (len(target_key_values) == 1
-                    and target_key_values[0] == 'False'):
+            if not target_key_values:
                 env[DEFAULT_YAML_ENVS[value]] = 'Yes'
         else:
-            if len(target_key_values) == 1 and target_key_values[0]:
-                env[value] = str(target_key_values[0])
+            # if len(target_key_values) == 1 and target_key_values[0]:
+            env[value] = flatten_list(target_key_values)
 
     # Create the env key
     rd['env'] = env
@@ -272,6 +295,23 @@ def syncAnywhere_options(sync_options: {}, yaml_map) -> {}:
     if _ and _[0]:
         rd['sync'].append('-A -W')
     return rd
+
+
+# flatten a possibly nested list of lists into a single string, with a space between every detected list element, but the list elemnts preserverd
+def flatten_list(nested_list: []) -> str:
+    """
+    Flatten a possibly nested list of lists into a single string, space separated
+    :param nested_list: list of lists
+    :return: flattened list
+    """
+    flat_list = []
+    for item in nested_list:
+        if isinstance(item, list):
+            # flat_list.extend(flatten_list(item))
+            flat_list.append(flatten_list(item))
+        else:
+            flat_list.append(item)
+    return ' '.join(str(x) for x in flat_list)
 
 
 def build_dest_args(cmd_params: [], cmd_param_map: {}) -> str:
@@ -314,14 +354,17 @@ def build_sync(start_time: DateTime, prod_level, src: os.PathLike, archive_dest:
     # Build the sync destination strings
     dest_cmd_args: str = build_dest_args(command_extras.get('sync'), SYNC_COMMAND_ARG_MAP)
     # HACK ALERT: do not quote {dest_cmd_args} the constants have to take care of this
-    # The moustaches {{}} inject a literal, not an fString resolution
+    #
+    #Unneded diagnostics you can insert into the command string
+    # set -vx
+    # pip show bdrc-util
+    # pip show bdrc-db-lib
+    # which syncOneWork.sh
+    # echo $PATH
+    #
+    # The moustaches {{}} inject a literal { or }, not an fString resolution
     bash_command = f"""
 #!/usr/bin/env bash
-set -vx
-pip show bdrc-util
-pip show bdrc-db-lib
-# which syncOneWork.sh
-# echo $PATH
 syncOneWork.sh -s $(mktemp) {dest_cmd_args} "{src}" 2>&1 | tee $syncLogDateTimeFile
 rc=${{PIPESTATUS[0]}}
 exit $rc
@@ -330,14 +373,29 @@ exit $rc
 
 
 if __name__ == '__main__':
-    pass
     from pprint import pp
 
-    pp(f"Empty string: {encode_for_bash('')}")
-    pp(f"Live string {encode_for_bash('helloWorld')}")
-    pp(f"space string {encode_for_bash('hello World')}")
-    # pass
+    # pp(f"Empty string: {encode_for_bash('')}")
+    # pp(f"Live string {encode_for_bash('helloWorld')}")
+    # pp(f"space string {encode_for_bash('hello World')}")
+    pass
+    MSY: str = """
+sync:
+    web: false
+    bladd: true
+"""
+    dsy: {} = yaml.safe_load(DEFAULT_SYNC_YAML)
+    msy: {} = yaml.safe_load(MSY)
+    merge_yaml(dsy, msy)
 
+    sync_options: {} = {'audit': {'post': ['-T', 'ImageFileNameFormat'], 'pre': ['-T', 'NoFilesInFolder']},
+                        'sync': {'archive': False, 'replace': False, 'update_web': True, 'web': True}}
+    ff = deep_search(sync_options, 'pre')
+
+    l1: [] = ['a', 'b']
+    l2: [] = ['c', ['d12', 'e34']]
+    cc = flatten_list([l1, l2])
+    pp(cc)
 #     example_dict = {
 #         'a': 1,
 #         'b': {'c': 2, 'd': {'e': 3}},
