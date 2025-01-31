@@ -292,7 +292,7 @@ def syncAnywhere_options(sync_options: {}, yaml_map) -> {}:
 
     # The relpace key has a boolean arg
     _ = deep_search(sync_options, 'replace')
-    if _ and _[0]:
+    if _:
         rd['sync'].append('-A -W')
     return rd
 
@@ -322,17 +322,19 @@ def build_dest_args(cmd_params: [], cmd_param_map: {}) -> str:
     :return: assembled proper command string
     """
     base: str = ''
-    for key in cmd_params:
+    for cmd_arg in cmd_params:
         # Not all possible commands have argumentsm so use .get()
         # If any of the keys would result in multiple token in bash, wrap them up
-        sh_able_key = encode_for_bash(cmd_param_map.get(key, ''))
-        base += f" {key} {sh_able_key}"
+        cmd_arg_value = cmd_param_map.get(cmd_arg, None)
+        base += f" {cmd_arg} "
+        if cmd_arg_value:
+            base += f"{encode_for_bash(cmd_arg_value)}"
     return base
 
 
 def encode_for_bash(string):
     import shlex
-    return shlex.quote(string)
+    return shlex.quote(string) if string else string
 
 
 def build_sync(start_time: DateTime, prod_level, src: os.PathLike, archive_dest: os.PathLike,
