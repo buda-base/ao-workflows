@@ -354,6 +354,12 @@ def sync(**context):
 
             db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
 
+# Github Copilot suggestion to get around "directory not empty" error
+
+def remove_readonly(func, path, _):
+    import stat
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 @task
 def cleanup(**context):
@@ -368,7 +374,7 @@ def cleanup(**context):
         # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for p in iter_or_return(a_down):
             pp(f"removing {str(p)}")
-            shutil.rmtree(p)
+            shutil.rmtree(p,onerror=remove_readonly)
 
 
 # DAG args for all DAGs
