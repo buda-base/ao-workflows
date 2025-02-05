@@ -100,14 +100,6 @@ services:
       # you can use the DSM UI
       # 
       - ${ARCH_ROOT:-/mnt}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data
-      # DEBUG_DEV
-      # For testing on local mac. This is a good reason for not
-      # using files, but a service. Note this folder has to match test_access_permissions.py
-      #  - /mnt/Archive0/00/TestArchivePermissions:/home/airflow/extern/Archive0/00/TestArchivePermissions
-      # - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
-      # - ${ARCH_ROOT:-/mnt}/Archive1:/home/airflow/extern/Archive1
-      # - ${ARCH_ROOT:-/mnt}/Archive2:/home/airflow/extern/Archive2
-      # - ${ARCH_ROOT:-/mnt}/Archive3:/home/airflow/extern/Archive3
       # ao-workflows-18 - dip_log match fs
       - ${ARCH_ROOT:-/mnt}:/mnt
 
