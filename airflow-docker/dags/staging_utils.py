@@ -9,6 +9,8 @@ from airflow.sensors.filesystem import FileSensor
 from pathlib import Path
 import configparser
 import re
+import logging
+LOG = logging.getLogger("airflow.task")
 
 import boto3
 import pendulum
@@ -17,14 +19,11 @@ from sqlalchemy import desc
 
 # ------------------    CONST --------------------
 RUN_SECRETS: Path = Path("/run/secrets")
+LOCK_FILE: str = '/tmp/CollectingWatcherLock.lock'
+
 
 
 # ------------------    /CONST --------------------
-# For synchronized running.
-import tempfile
-
-# mkstemp returns a tuple. The first is the fd, the other is the path.
-LOCK_FILE: str = tempfile.NamedTemporaryFile('wb').name
 
 
 class CollectingSingleFileSensor(FileSensor):
@@ -35,11 +34,13 @@ class CollectingSingleFileSensor(FileSensor):
     def acquire_lock(self):
         lock_file = open(LOCK_FILE, 'w')
         fcntl.flock(lock_file, fcntl.LOCK_EX)
+        LOG.info(f"got lock on {LOCK_FILE=}")
         return lock_file
 
     def release_lock(self, lock_file):
         fcntl.flock(lock_file, fcntl.LOCK_UN)
         lock_file.close()
+        LOG.info(f"released lock on {LOCK_FILE=}")
 
     def __init__(self, processing_path: Path, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -61,8 +62,11 @@ class CollectingSingleFileSensor(FileSensor):
                 shutil.move(target_match, target_path)
                 # push the moved file onto the response stack
                 context['ti'].xcom_push(key='collected_file', value=str(target_path))
+                LOG.info(f"Located {target_match} and moved to {target_path}")
                 return True
-            return False
+            else:
+                LOG.info(f"Nothing found for {self.filepath}")
+                return False
         finally:
             self.release_lock(lock_file)
 

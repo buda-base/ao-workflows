@@ -21,9 +21,10 @@ Synopsis:syncOneWork.sh  [ -h ] [-A] [-W] [ -a archiveParent ] [ -w webParent ] 
 """
 import os
 from pathlib import Path
-
 import yaml
 from pendulum import DateTime
+import logging
+LOG = logging.getLogger("airflow.task")
 
 from staging_utils import get_db_config
 
@@ -110,6 +111,7 @@ def build_arg_map(archive_dest: os.PathLike, web_dest: str, arg_map: {}):
 
 deep_search_results: object = None
 
+
 # +3 GitHub Copilot
 def deep_search(dictionary, key) -> object:
     """
@@ -120,10 +122,11 @@ def deep_search(dictionary, key) -> object:
     """
 
     global deep_search_results
+
     def search(d):
         global deep_search_results
         if isinstance(d, dict):
-            for k, v in d.items() :
+            for k, v in d.items():
                 if deep_search_results:
                     break
                 if k == key:
@@ -135,6 +138,7 @@ def deep_search(dictionary, key) -> object:
                     for item in v:
                         if isinstance(item, dict):
                             search(item)
+
     deep_search_results = None
     search(dictionary)
     return deep_search_results
@@ -234,11 +238,16 @@ def build_sync_env(execution_date, prod_level: str, db_config: os.PathLike) -> d
         "syncLogDateTimeFile": str(sync_log_file),
         "syncLogTempDir": str(sync_log_home / "tempFiles"),
         "PATH": os.getenv("PATH")
+
     }
 
-    # This is a hack to avoid the BUDA refresh
-    if os.getenv("PYDEV_DEBUG") == "YES":
-        env["NO_REFRESH_WEB"] = "YES"
+    # jimk aow32: provide aws credentials only under docker
+    if os.path.exists("/run/secrets/aws"):
+        env['AWS_SHARED_CREDENTIALS_FILE'] = '/run/secrets/aws'
+
+
+
+    LOG.info(f" sync environment: {env}")
 
     return env
 
@@ -357,7 +366,7 @@ def build_sync(start_time: DateTime, prod_level, src: os.PathLike, archive_dest:
     dest_cmd_args: str = build_dest_args(command_extras.get('sync'), SYNC_COMMAND_ARG_MAP)
     # HACK ALERT: do not quote {dest_cmd_args} the constants have to take care of this
     #
-    #Unneded diagnostics you can insert into the command string
+    # Unneded diagnostics you can insert into the command string
     # set -vx
     # pip show bdrc-util
     # pip show bdrc-db-lib
@@ -375,29 +384,28 @@ exit $rc
 
 
 if __name__ == '__main__':
-    from pprint import pp
-
+    # Just test stubs here
     # pp(f"Empty string: {encode_for_bash('')}")
     # pp(f"Live string {encode_for_bash('helloWorld')}")
     # pp(f"space string {encode_for_bash('hello World')}")
     pass
-    MSY: str = """
-sync:
-    web: false
-    bladd: true
-"""
-    dsy: {} = yaml.safe_load(DEFAULT_SYNC_YAML)
-    msy: {} = yaml.safe_load(MSY)
-    merge_yaml(dsy, msy)
-
-    sync_options: {} = {'audit': {'post': ['-T', 'ImageFileNameFormat'], 'pre': ['-T', 'NoFilesInFolder']},
-                        'sync': {'archive': False, 'replace': False, 'update_web': True, 'web': True}}
-    ff = deep_search(sync_options, 'pre')
-
-    l1: [] = ['a', 'b']
-    l2: [] = ['c', ['d12', 'e34']]
-    cc = flatten_list([l1, l2])
-    pp(cc)
+#     MSY: str = """
+# sync:
+#     web: false
+#     bladd: true
+# """
+#     dsy: {} = yaml.safe_load(DEFAULT_SYNC_YAML)
+#     msy: {} = yaml.safe_load(MSY)
+#     merge_yaml(dsy, msy)
+#
+#     sync_options: {} = {'audit': {'post': ['-T', 'ImageFileNameFormat'], 'pre': ['-T', 'NoFilesInFolder']},
+#                         'sync': {'archive': False, 'replace': False, 'update_web': True, 'web': True}}
+#     ff = deep_search(sync_options, 'pre')
+#
+#     l1: [] = ['a', 'b']
+#     l2: [] = ['c', ['d12', 'e34']]
+#     cc = flatten_list([l1, l2])
+#     print(cc)
 #     example_dict = {
 #         'a': 1,
 #         'b': {'c': 2, 'd': {'e': 3}},

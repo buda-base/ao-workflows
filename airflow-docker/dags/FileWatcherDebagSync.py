@@ -18,8 +18,8 @@ import fnmatch
 # This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
 # to drop back to datetime.timedelta
 from datetime import timedelta
-from pprint import pprint as pp
 from typing import Union, List
+import logging
 
 import airflow.operators.bash
 from airflow import DAG
@@ -73,7 +73,7 @@ _DEV_DB: str = 'qa'
 
 # TODO: Convert to pendulum
 _DEV_TIME_SCHEDULE: timedelta = timedelta(minutes=3)
-_DEV_DAG_START_DATE: DateTime = DateTime(2025, 1, 12, 11, 15)
+_DEV_DAG_START_DATE: DateTime = DateTime(2025, 2, 7, 16, 15)
 _DEV_DAG_END_DATE: DateTime = DateTime(2025, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=15)
@@ -81,7 +81,8 @@ _PROD_DAG_START_DATE: DateTime = DateTime(2024, 11, 24, 14, 22)
 _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(weeks=1)
 
 # Sync parameters
-_DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp")
+# Under docker, /mnt is linked to a local directory, not the real /mnt. See bdrc-docker-compose.yml
+_DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp") if not os.path.exists('/run/secrets') else "/mnt"
 #
 # Use S3Path, if we ever use this var. For now, but this layer is just passing it on
 _DEV_WEB_DEST: str = "s3://manifest.bdrc.org/Works"
@@ -102,6 +103,9 @@ SYNC_TZ_LABEL: str = 'America/New_York'
 
 #  ------------   /CONST  ----------------------------
 
+# -------------   LOGGING ----------------------------
+# Hope this spans tasks
+LOG = logging.getLogger("airflow.task")
 # --------------------- DEV|PROD CONFIG  ---------------
 # Loads the values set in MY_.....
 # Of course, you do not want to call side effect inducing functions in setting this
@@ -116,7 +120,11 @@ MY_WEB_DEST: str = _PROD_WEB_DEST
 # When debugging in an IDE, always set a breakpoint here,
 # just to ensure you're not running in production
 # Of course, you have to set the env var PYDEV_DEBUG
-if os.getenv("PYDEV_DEBUG") == "YES":
+# you can set it in the docker-compose.yaml, after
+
+
+is_debug=os.getenv("PYDEV_DEBUG","NO")
+if is_debug == "YES":
     DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
     DAG_START_DATETIME = _DEV_DAG_START_DATE
     DAG_END_DATETIME = _DEV_DAG_END_DATE
@@ -124,6 +132,15 @@ if os.getenv("PYDEV_DEBUG") == "YES":
     # OK to leave local - $ARCH_ROOT in the .env makes this safe
     MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
     MY_WEB_DEST = _DEV_WEB_DEST
+
+LOG.info(f"{is_debug=}")
+LOG.info(f"{DAG_TIME_DELTA=}")
+LOG.info(f"{DAG_START_DATETIME=}")
+LOG.info(f"{DAG_END_DATETIME=}")
+LOG.info(f"{MY_DB=}")
+LOG.info(f"{MY_DEST_PATH_ROOT=}")
+LOG.info(f"{MY_WEB_DEST=}")
+    # OK to leave local - $ARCH_ROOT in the .env makes this safepp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 # --------------- SETUP DAG    ----------------
@@ -209,16 +226,37 @@ def get_extract_downs(unzipped: Union[List[Path], os.PathLike]) -> [Path]:
         add_if_work(unz, works)
     return works
 
-
-def stage(detected) -> Path:
+def stage_in_task(**context) -> (Path, Path):
     """
-    put the input article into the staging path
-    :param detected:
+    Stages the Wait for file file for unzipping
+    :param context: airflow task context
     :return:
     """
-    pp(f"Copying {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
+    run_id_path: str = pathable_airflow_run_id(context['run_id'])
+    task_id: str = context['task'].task_id
+
+    LOG.info(f"Run ID: {run_id_path}, Task ID: {task_id}")
+
+    detected: str = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
+    # TODO: Figure out why FileSensor returns empty
+    if not detected:
+        raise AirflowException("No file detected, but wait_for_file returned true")
+    staging_path: Path = Path(STAGING_PATH, run_id_path, task_id)
+    LOG.info(f"Copying incoming {detected} to {RETENTION_PATH}. Using {staging_path} as the staging area")
     shutil.copy(detected, RETENTION_PATH)
-    #    pp(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
+
+    empty_contents(staging_path)
+    return detected, staging_path
+
+
+def stage(detected, RETENTION_PATH: Path) -> Path:
+    """
+    put the input article into the staging path
+    :param detected: to move
+    :param RETENTION_PATH: destination
+    :return:
+    """
+    #    LOG.info(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
     os.makedirs(STAGING_PATH, exist_ok=True)
     return STAGING_PATH
 
@@ -247,16 +285,8 @@ def debag(**context) -> [str]:
     so returning strings
     """
 
-    # DEBUG_DEV
-    # return ["/home/airflow/bdrc/data/work/W1NLM4700"]
-    # Get the file
-    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
-
-    # TODO: Figure out why FileSensor returns empty
-    if not detected:
-        raise AirflowException("No file detected, but wait_for_file returned true")
-    staging_path: Path = stage(detected)
-    empty_contents(staging_path)
+    detected, staging_path = stage_in_task(**context)
+    os.makedirs(staging_path, exist_ok=True)
 
     # Remove any contents of staging_path
     # Debag returns [pathlib.Path] - supports multiple works per bag
@@ -283,7 +313,7 @@ def debag(**context) -> [str]:
         dest_bag: Path = db_down / bag_target
         src_bag_path: Path = staging_path / "bags" / bag_target
         if not os.path.exists(src_bag_path):
-            pp(f"Could not find {src_bag_path} for {work_name}")
+            LOG.info(f"Could not find {src_bag_path} for {work_name}")
             continue
         save_glob: str = f"*manifest*.txt"
         for fd in os.scandir(src_bag_path):
@@ -293,7 +323,7 @@ def debag(**context) -> [str]:
                 if target.exists():
                     target.unlink()
                 shutil.move(fd.path, target)
-        pp(f"{work_name=} {db_down=} {src_bag_path=}")
+        LOG.info(f"{work_name=} {db_down=} {src_bag_path=}")
         db_phase(GlacierSyncOpCodes.DEBAGGED, work_name, db_config=MY_DB, user_data={'debagged_path': str(db_down)})
     context['ti'].xcom_push(key=EXTRACTED_CONTEXT_KEY, value=[str(d.absolute()) for d in debagged_downs])
 
@@ -305,12 +335,8 @@ def unzip(**context):
     :param context:
     :return: pushes into context['ti'](task_id DEBAG_TASK_ID, key EXTRACTED_CONTEXT_KEY)
     """
-    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
-
-    # TODO: Figure out why FileSensor returns empty
-    if not detected:
-        raise AirflowException("No file detected, but wait_for_file returned true")
-    staging_path: Path = stage(detected)
+    detected, staging_path = stage_in_task(**context)
+    os.makedirs(staging_path, exist_ok=True)
 
     try:
         # Unzip detected into STAGING_PATH
@@ -332,25 +358,25 @@ def sync(**context):
     :param context: airflow context
     """
     from pendulum import DateTime
-    from pprint import pp
     # DEBUG_DEV
     # return 0
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
-
+    
     downs = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
-    pp(downs)
     # downs could be a list of lists, if a bag or a zip file contained multiple works
     for a_down in iter_or_return(downs):
         # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for down in iter_or_return(a_down):
             env, bash_command = sb.build_sync(start_time=local_start, prod_level=MY_DB, src=down,
                                               archive_dest=DEST_PATH, web_dest=MY_WEB_DEST)
+            LOG.info(f"syncing {down}")
+
             airflow.operators.bash.BashOperator(
-                task_id="sync_debag",
-                bash_command=bash_command,
-                env=env
-            ).execute(context)
+                    task_id="sync_debag",
+                    bash_command=bash_command,
+                    env=env
+                ).execute(context)
 
             db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
 
@@ -361,27 +387,49 @@ def remove_readonly(func, path, _):
     os.chmod(path, stat.S_IWRITE)
     func(path)
 
+
+def pathable_airflow_run_id(possible: str) -> str:
+    """
+    transforms a run if into a path that can be used in a shell, by removing characters which could be operands
+    :param possible:
+    :return: the predecessor of any "+" in the strin
+    """
+    return possible.replace("+", "Z" )
+
+
 @task
 def cleanup(**context):
     """
-    Cleans up the work area that was sync'd. Of course, you only run after sync has succeeded
+    Cleans up the work area that was sync'd. Of course, you only run after sync, or sync's succeeded
     """
     # Use the same paths that were input to 'sync'
     # p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=EXTRACTED_CONTEXT_KEY)
     p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
+    run_id = pathable_airflow_run_id(context['run_id'])
+
+    # deduplicate
+    run_id_paths: set = set()
 
     for a_down in iter_or_return(p_to_rm):
-        # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for p in iter_or_return(a_down):
-            pp(f"removing {str(p)}")
-            shutil.rmtree(p,onerror=remove_readonly)
+            # Find the run id, if it is in the path
+            dd = Path(p)
+            if run_id in dd.parts:
+                while dd.name != run_id:
+                    dd = dd.parent
+            run_id_paths.add(dd)
+    for r_i_p in run_id_paths:
+        LOG.info(f"removing {str(r_i_p)}")
+        shutil.rmtree(r_i_p,onerror=remove_readonly)
+
 
 
 # DAG args for all DAGs
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    #    'start_date': DateTime(2024, 2, 20),
+    'start_date': DAG_START_DATETIME,
+    'end_date': DAG_END_DATETIME,
     #    'email': ['your-email@example.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -393,13 +441,12 @@ default_args = {
 
 with DAG('down_scheduled',
          # These are for rapid file testing
-         schedule=timedelta(seconds=30),
-         start_date=DateTime(2024, 11, 21, 15, 30, tzinfo=Timezone('America/New_York')),
+         schedule=timedelta(minutes=1),
+         start_date=DAG_START_DATETIME,
          end_date=DAG_END_DATETIME,
-         tags=['bdrc'],
-         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
+         # try using feeds settings
          default_args=default_args,
-         max_active_runs=6
+         max_active_runs=5
          ) as get_one:
     start = EmptyOperator(
         task_id='start'
@@ -410,7 +457,9 @@ with DAG('down_scheduled',
         task_id=WAIT_FOR_FILE_TASK_ID,
         filepath=f"{str(READY_PATH)}/{ZIP_GLOB}",
         poke_interval=10,
-        # Needed for fs? timeout=5,
+        mode='poke'
+        # TODO: How can I avoid failures when no files for a long time?
+        # timeout=3600,
         # Apparently, having this on returns true
         # mode='reschedule'
     )
@@ -422,31 +471,32 @@ with DAG('down_scheduled',
     start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> cleanup()
 
 with DAG('feeder',
-         schedule=timedelta(hours=2),
+         schedule=timedelta(minutes=3),
+         # schedule=timedelta(minutes=3),
          start_date=DAG_START_DATETIME,
          end_date=DAG_END_DATETIME,
-         tags=['bdrc'],
-         catchup=False,  # SUPER important. Catchups can confuse the Postgres DB
          default_args=default_args,
          max_active_runs=1) as feeder:
+    
     @task
     def feed_files(src_path: Path, dest_path: Path):
         """
         Replenishes the ready directory
         :return:
         """
-
+    
         in_process_queue_bag_count: int = 0
         with os.scandir(dest_path) as _process:
             for _p in _process:
                 if _p.is_file() and fnmatch.fnmatch(_p.name, ZIP_GLOB):
                     in_process_queue_bag_count += 1
 
-        pp(f"Looking for {ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} "
+        LOG.info(f"Looking for {ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} "
            f"PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
         if in_process_queue_bag_count < PROCESSING_LOW_LIMIT:
             n_to_feed: int = PROCESSING_HIGH_LIMIT - in_process_queue_bag_count
             to_move: [] = []
+            LOG.info(f"Looking for {ZIP_GLOB} in {src_path=}")
             with os.scandir(src_path) as _dir:
                 for _d in _dir:
                     if _d.is_file() and fnmatch.fnmatch(_d.name, ZIP_GLOB):
@@ -455,12 +505,13 @@ with DAG('feeder',
                         if n_to_feed == 0:
                             break
             # _m is str
+            if not to_move:
+                LOG.info(f"No  {ZIP_GLOB} in {src_path=}")
             for _m in to_move:
-                pp(f"Moving {_m} to {dest_path}/{Path(_m).name}")
+                LOG.info(f"Moving {_m} to {dest_path}/{Path(_m).name}")
                 shutil.move(_m, dest_path)
         else:
-            pp("No need to feed")
-
+            LOG.info("No need to feed")
 
     feed_files(DOWNLOAD_PATH, READY_PATH)
 
@@ -468,17 +519,5 @@ if __name__ == '__main__':
     # noinspection PyArgumentList
     # feeder.test()
 
-    test_yaml = """
-    
-    """
-    ee = {'DB_CONFIG': 'qa:~/.config/bdrc/db_apps.config', 'DEBUG_SYNC': 'true', 'NO_REFRESH_WEB': 'YES',
-          'PATH': '/Users/jimk/dev/ao-workflows/venv/bin:/opt/anaconda3/bin:/opt/anaconda3/condabin:/Users/jimk/.jenv/shims:/Users/jimk/.nvm/versions/node/v12.16.3/bin:/Library/Java/JavaVirtualMachines/jdk-11.0.8.jdk/Contents/Home/bin:/Users/jimk/bin:/Users/jimk/.local/bin:/usr/local/opt/coreutils/libexec/gnubin:/usr/local/opt/sqlite/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Library/Apple/usr/bin:/Applications/audit-tool.app/Contents/MacOS',
-          'auditToolLogDateTimeDir': '/Users/jimk/bdrc/log/audit-test-logs/2025-01-24/2025-01-24_11.51.36',
-          'auditToolVersion': 'unknown', 'hostName': 'airflow_platform', 'jobDate': '2025-01-24',
-          'jobDateTime': '2025-01-24_11.51.36', 'jobTime': '11.51.36', 'logDipVersion': 'bdrc-util 1.0.11',
-          'syncLogDateTimeDir': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36',
-          'syncLogDateTimeFile': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/sync-2025-01-24_11.51.36.log',
-          'syncLogTempDir': '/Users/jimk/bdrc/log/sync-logs/2025-01-24/2025-01-24_11.51.36/tempFiles',
-          'userName': 'airflow_platform_user'}
     get_one.test()
     # gs_dag.cli()
