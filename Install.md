@@ -36,7 +36,7 @@ doesn't say that the full paths to `dags` `logs` and `plugins` has to be in the 
     -  /home/Hargulatrix/airflow/logs:/opt/airflow/logs
     -  /home/Hargulatrix/airflow/plugins:/opt/airflow/plugins
 ```
-(I also made these dirs 775 so the docker group, to which I added myseld)
+(I also made these dirs 775 so the docker group, to which I added myself)
 
 ```shell
 docker compose up airflow-init
