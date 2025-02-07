@@ -25,6 +25,24 @@ COPY audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb .
 RUN dpkg  -i audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb
 RUN update-alternatives --install /usr/local/bin/audit-tool audit-tool /opt/audit-tool/audit-v1-beta/bin/audit-tool 50
 #
+# jimk ao-workflows#32: set up awsclient for web
+# sources: ChatGPT and https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+# Install dependencies
+# Note - this has to be run in the USER root section
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+# Download and install AWS CLI v2
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install && \
+    rm -rf aws awscliv2.zip
+# Verify installation
+RUN aws --version
+
+#
 # Will this help log permissions on debian?
 # Apparently not.
 # RUN chown -R airflow:0 /opt/airflow/logs
