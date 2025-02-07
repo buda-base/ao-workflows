@@ -24,11 +24,11 @@ _DEV_SYNC_ACCESS_UID=5000
 _PROD_ARCH_ROOT=
 _DEV_ARCH_ROOT=.
 
-MY_SYNC_ACCESS_UID=${_PROD_SYNC_ACCESS_UID}
-MY_ARCH_ROOT=${_PROD_ARCH_ROOT}
+#MY_SYNC_ACCESS_UID=${_PROD_SYNC_ACCESS_UID}
+#MY_ARCH_ROOT=${_PROD_ARCH_ROOT}
 
-# MY_SYNC_ACCESS_UID=${_DEV_SYNC_ACCESS_UID}
-# MY_ARCH_ROOT=${_DEV_ARCH_ROOT}
+MY_SYNC_ACCESS_UID=${_DEV_SYNC_ACCESS_UID}
+MY_ARCH_ROOT=${_DEV_ARCH_ROOT}
 
 #endregion
 function usage() {
@@ -105,15 +105,15 @@ done
 
 
 log_echo docker-compose
-cp $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
+cp -p $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
 log_echo dags
-cp -r $SRC/dags ${DEPLOY}
+cp -rp $SRC/dags ${DEPLOY}
 
 # Borrowed from bdrc-docker.sh
 export SECRETS=$DEPLOY/.docker-secrets
 mkdir -p "${SECRETS}"
 log_echo secrets - bdrc
-cp -v ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
+cp -vp ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
 #
 # These section names, 'default' and 'ap_northeast', are hard-coded in the dags/..py
 log_echo aws default
@@ -136,7 +136,7 @@ ARCH_ROOT=${MY_ARCH_ROOT}
 # For build only
 BUILD_CONFIG_ROOT=
 
-SYNC_ACCESS_UID=$_PROD_SYNC_ACCESS_UID
+SYNC_ACCESS_UID=$MY_SYNC_ACCESS_UID
 EOF
 
 # They say this is a BUILD image arg, not a runtime arg
