@@ -13,6 +13,7 @@ x-environment: &airflow_environment
   - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
 # jimk ao14 local change
   - TZ=America/New_York
+  - PYDEV_DEBUG=YES
 
 # x-airflow-image: &airflow_image apache/airflow:2.0.0-python3.8
 # jimk - lets get frisky
