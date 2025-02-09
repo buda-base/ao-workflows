@@ -265,6 +265,7 @@ def syncAnywhere_options(sync_options: {}, yaml_map) -> {}:
     # Look in directive_map (user input or default) for the keys in the yaml_map
     # you have to do an in depth search
     for target_key, value in yaml_map.items():
+        # tearget_key_values holds the user input, crated in sync_options
         target_key_values: [] = deep_search(sync_options, target_key)
         if not target_key_values:
             continue
