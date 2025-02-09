@@ -37,6 +37,7 @@ Debugging and initial test
         ...
 
  If you're in an IDE, you can set this environment, most usually in the Run/Debug configuration.
+
 Local airflow services test
 ---------------------------
 
@@ -80,11 +81,21 @@ Building the Docker image -- ``bdrc-docker.sh``
 
         ``$COMPOSE_BUILD_DIR`` is only used to create the docker image. It has no further part in the process.
 
-``bdrc-docker.sh`` is the entry point to building the :strong:`bdrc-airflow` image, that ``docker compose`` runs later. It:
+``bdrc-docker.sh`` is the entry point to building the :strong:`bdrc-airflow` image, that ``docker compose`` runs later.
+
+Prerequisites
+----------------
+#. get the ``archive-ops`` repo into ``~/dev/archive-ops`` This is a hard-wired path requirement.
+#. get the ``ao-workflows`` repo into anywhere
+
+Operation
+---------
+
+``bdrc-docker.sh``:
 
 #. Sets up a ``COMPOSE_BUILD_DIR``
 #. if -rebuild, wipes out the ``COMPOSE_BUILD_DIR`` otherwise adds to it.
-#. Copies in (to ``COMPOSE_BUILD_DIR``) the `archive-ops/scripts/syncAnywhere/deployment`  scripts (``syncOneWork.sh``) to a place where they can be added to the docker image
+#. Copies in (to ``COMPOSE_BUILD_DIR``) the `archive-ops/scripts/syncAnywhere/deployment`  scripts (``syncOneWork.sh`` and its dependents) to a place where they can be added to the docker image
 #. Merges two sets of requirement files, and invokes  ``RUN pip install -r requirements.txt`` on the image. This installs all the python libraries that both the DAG and the sync scripts require
 #. Brings down the Debian audit tool install image from github and installs it in the image
 #. Adds the audit tool configuration to image.

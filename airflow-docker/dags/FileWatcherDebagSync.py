@@ -19,7 +19,6 @@ import fnmatch
 # to drop back to datetime.timedelta
 from datetime import timedelta
 from typing import Union, List
-import logging
 
 import airflow.operators.bash
 from airflow import DAG
@@ -27,8 +26,9 @@ from airflow.decorators import task
 from airflow.exceptions import AirflowException
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
+# bag is in pyPI bdrc-bag
 from bag import bag_ops
-from pendulum import DateTime, Timezone
+from pendulum import DateTime
 
 import SyncOptionBuilder as sb
 from staging_utils import *
@@ -123,7 +123,7 @@ MY_WEB_DEST: str = _PROD_WEB_DEST
 # you can set it in the docker-compose.yaml, after
 
 
-is_debug=os.getenv("PYDEV_DEBUG","NO")
+is_debug = os.getenv("PYDEV_DEBUG", "NO")
 if is_debug == "YES":
     DAG_TIME_DELTA = _DEV_TIME_SCHEDULE
     DAG_START_DATETIME = _DEV_DAG_START_DATE
@@ -140,7 +140,7 @@ LOG.info(f"{DAG_END_DATETIME=}")
 LOG.info(f"{MY_DB=}")
 LOG.info(f"{MY_DEST_PATH_ROOT=}")
 LOG.info(f"{MY_WEB_DEST=}")
-    # OK to leave local - $ARCH_ROOT in the .env makes this safepp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
+# OK to leave local - $ARCH_ROOT in the .env makes this safepp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 # --------------- SETUP DAG    ----------------
@@ -226,6 +226,7 @@ def get_extract_downs(unzipped: Union[List[Path], os.PathLike]) -> [Path]:
         add_if_work(unz, works)
     return works
 
+
 def stage_in_task(**context) -> (Path, Path):
     """
     Stages the Wait for file file for unzipping
@@ -307,6 +308,11 @@ def debag(**context) -> [str]:
     # This turns out to be problematic for future bagging, because debag sees
     # Work/Work.bag as a bag, but without any contents in the 'data/'
     # so only copy the manifest and tag files
+
+    # Set up debag logging to not show every file. see ~/dev/count-irat/count-images/irat/bdrc_irat/scan_images.py
+    for hush_lib in ['bagit.py', 'bagit']:
+        logging.getLogger(hush_lib).setLevel(logging.CRITICAL)
+
     for db_down in debagged_downs:
         work_name: str = Path(db_down).stem
         bag_target: str = f"{work_name}.bag"
@@ -362,7 +368,7 @@ def sync(**context):
     # return 0
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
-    
+
     downs = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
     # downs could be a list of lists, if a bag or a zip file contained multiple works
     for a_down in iter_or_return(downs):
@@ -373,12 +379,13 @@ def sync(**context):
             LOG.info(f"syncing {down}")
 
             airflow.operators.bash.BashOperator(
-                    task_id="sync_debag",
-                    bash_command=bash_command,
-                    env=env
-                ).execute(context)
+                task_id="sync_debag",
+                bash_command=bash_command,
+                env=env
+            ).execute(context)
 
             db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
+
 
 # Github Copilot suggestion to get around "directory not empty" error
 
@@ -394,7 +401,7 @@ def pathable_airflow_run_id(possible: str) -> str:
     :param possible:
     :return: the predecessor of any "+" in the strin
     """
-    return possible.replace("+", "Z" )
+    return possible.replace("+", "Z")
 
 
 @task
@@ -420,8 +427,7 @@ def cleanup(**context):
             run_id_paths.add(dd)
     for r_i_p in run_id_paths:
         LOG.info(f"removing {str(r_i_p)}")
-        shutil.rmtree(r_i_p,onerror=remove_readonly)
-
+        shutil.rmtree(r_i_p, onerror=remove_readonly)
 
 
 # DAG args for all DAGs
@@ -477,14 +483,13 @@ with DAG('feeder',
          end_date=DAG_END_DATETIME,
          default_args=default_args,
          max_active_runs=1) as feeder:
-    
     @task
     def feed_files(src_path: Path, dest_path: Path):
         """
         Replenishes the ready directory
         :return:
         """
-    
+
         in_process_queue_bag_count: int = 0
         with os.scandir(dest_path) as _process:
             for _p in _process:
@@ -492,7 +497,7 @@ with DAG('feeder',
                     in_process_queue_bag_count += 1
 
         LOG.info(f"Looking for {ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} "
-           f"PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
+                 f"PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
         if in_process_queue_bag_count < PROCESSING_LOW_LIMIT:
             n_to_feed: int = PROCESSING_HIGH_LIMIT - in_process_queue_bag_count
             to_move: [] = []
@@ -512,6 +517,7 @@ with DAG('feeder',
                 shutil.move(_m, dest_path)
         else:
             LOG.info("No need to feed")
+
 
     feed_files(DOWNLOAD_PATH, READY_PATH)
 
