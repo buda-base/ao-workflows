@@ -18,6 +18,7 @@ import fnmatch
 # This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
 # to drop back to datetime.timedelta
 from datetime import timedelta
+from time import strftime
 from typing import Union, List
 
 import airflow.operators.bash
@@ -140,7 +141,7 @@ LOG.info(f"{DAG_END_DATETIME=}")
 LOG.info(f"{MY_DB=}")
 LOG.info(f"{MY_DEST_PATH_ROOT=}")
 LOG.info(f"{MY_WEB_DEST=}")
-# OK to leave local - $ARCH_ROOT in the .env makes this safepp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
+# OK to leave local - $ARCH_ROOT in the .env makes this safe pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 # --------------- SETUP DAG    ----------------
@@ -229,37 +230,31 @@ def get_extract_downs(unzipped: Union[List[Path], os.PathLike]) -> [Path]:
 
 def stage_in_task(**context) -> (Path, Path):
     """
-    Stages the Wait for file file for unzipping
+    Stages the Wait for file for unzipping
     :param context: airflow task context
-    :return:
+    :return: tuple containing the path of the detected file, and the path to the location it is to be moved
+    to for work.
     """
-    run_id_path: str = pathable_airflow_run_id(context['run_id'])
-    task_id: str = context['task'].task_id
 
-    LOG.info(f"Run ID: {run_id_path}, Task ID: {task_id}")
-
+    # sanity check
     detected: str = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
-    # TODO: Figure out why FileSensor returns empty
     if not detected:
         raise AirflowException("No file detected, but wait_for_file returned true")
-    staging_path: Path = Path(STAGING_PATH, run_id_path, task_id)
+
+    # Stage into
+    from pendulum import DateTime
+    dis: DateTime = context['data_interval_start']
+    run_data_path: str = f"{context['dag'].dag_id}_{dis.in_tz('local').strftime('%Y-%m-%dT%H:%M:%S')}"
+    task_id: str = context['task'].task_id
+
+    LOG.info(f"Run ID: {run_data_path}, Task ID: {task_id}")
+
+    staging_path: Path = Path(STAGING_PATH, run_data_path, task_id)
     LOG.info(f"Copying incoming {detected} to {RETENTION_PATH}. Using {staging_path} as the staging area")
     shutil.copy(detected, RETENTION_PATH)
 
     empty_contents(staging_path)
     return detected, staging_path
-
-
-def stage(detected, RETENTION_PATH: Path) -> Path:
-    """
-    put the input article into the staging path
-    :param detected: to move
-    :param RETENTION_PATH: destination
-    :return:
-    """
-    #    LOG.info(f"Copied {detected} to {RETENTION_PATH}. Using {STAGING_PATH} as the staging area")
-    os.makedirs(STAGING_PATH, exist_ok=True)
-    return STAGING_PATH
 
 
 # ----------------------   airflow task declarations  -------------------------
@@ -309,9 +304,6 @@ def debag(**context) -> [str]:
     # Work/Work.bag as a bag, but without any contents in the 'data/'
     # so only copy the manifest and tag files
 
-    # Set up debag logging to not show every file. see ~/dev/count-irat/count-images/irat/bdrc_irat/scan_images.py
-    for hush_lib in ['bagit.py', 'bagit']:
-        logging.getLogger(hush_lib).setLevel(logging.CRITICAL)
 
     for db_down in debagged_downs:
         work_name: str = Path(db_down).stem
@@ -387,7 +379,7 @@ def sync(**context):
             db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
 
 
-# Github Copilot suggestion to get around "directory not empty" error
+# GitHub Copilot suggestion to get around "directory not empty" error
 
 def remove_readonly(func, path, _):
     import stat
@@ -399,9 +391,13 @@ def pathable_airflow_run_id(possible: str) -> str:
     """
     transforms a run if into a path that can be used in a shell, by removing characters which could be operands
     :param possible:
-    :return: the predecessor of any "+" in the strin
+    :return: the predecessor of any "+" in the string
     """
-    return possible.replace("+", "Z")
+    parseable: str =  possible.replace("+", "Z")
+    #
+    # remove the "scheduled__" or "manual__" prefix
+    skip_path= r"^.*__"
+    return re.sub(skip_path, "", parseable)
 
 
 @task

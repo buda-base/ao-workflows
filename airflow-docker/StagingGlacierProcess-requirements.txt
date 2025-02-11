@@ -1,6 +1,7 @@
+bdrc-bag==0.0.8a
 boto3~=1.21.21
 bdrc-volume-manifest-builder>=1.2.6
-bdrc-bag>=0.0.7
+# TODO: bump to 0.08
 bdrc-util>=1.0.11
 bdrc-volume-manifest-builder
 botocore~=1.24.21
