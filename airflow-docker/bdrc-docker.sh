@@ -43,7 +43,7 @@ prepare_pyPI_requirements() {
     exit 1
   fi
   full_tbin=merged-requirements.txt
-  cat ${1}/bin/sync-requirements.txt ./StagingGlacierProcess-requirements.txt | sort -u | awk -F'[>,~=]' '{print $1}'> ${1}/${full_tbin}
+  ./merge-requirements.py -o  ${1}/${full_tbin} ${1}/bin/sync-requirements.txt ./StagingGlacierProcess-requirements.txt
   echo ${full_tbin}
 }
 
