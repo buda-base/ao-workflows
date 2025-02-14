@@ -98,7 +98,7 @@ secrets:
       ${SECRETS}/db_apps.config
   drs_cnf:
     file:
-      ${SECRETS}/drs.config
+      ${SECRETS}/drsnew.config
   aws:
     file:
       ${SECRETS}/aws-credentials
