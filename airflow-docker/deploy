@@ -53,9 +53,9 @@ init_test_env() {
 
   # Set up the work directory that the production environment needs
   # Make download target
-  todo="${1}/AO-staging-Incoming/bag-download"
-  mkdir -p $todo || exit 1
-  chmod -R 777 "${1}/AO-staging-Incoming"
+#  todo="${1}/AO-staging-Incoming/bag-download"
+#  mkdir -p $todo || exit 1
+#  chmod -R 777 "${1}/AO-staging-Incoming"
 
 }
 
@@ -119,9 +119,9 @@ fi
 
 
 [[ ! -d $DEPLOY ]] && {   mkdir $DEPLOY || exit 1 ;  }
-  # jimk aow-14 - add sync logs
-  log_echo "building directories"
-for DD in "$DEPLOY/dags" "$DEPLOY/logs"  "$DEPLOY/plugins" "$DEPLOY/processing" "$DEPLOY/processing/logs" ; do
+# jimk aow-14 - add sync logs
+log_echo "building directories"
+for DD in "$DEPLOY/dags" "$DEPLOY/logs"  "$DEPLOY/plugins" "$DEPLOY/processing" "$DEPLOY/processing/logs" "$DEPLOY/data" ; do
     mkdir -p $DD
     chmod 777 $DD
 done

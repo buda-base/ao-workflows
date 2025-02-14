@@ -70,7 +70,9 @@ services:
       # System logs
       - ./logs:/opt/airflow/logs
       # In DEV, ARCH_ROOT is set, so that it has to have an AO-staging-Incoming & etc
-      - ${ARCH_ROOT:-/mnt}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data
+      # - ${ARCH_ROOT:-/mnt}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data
+      # aow32 - local work
+      - ./data:/home/airflow/bdrc/data
       # ao-workflows-18 - dip_log match fs
       - ${ARCH_ROOT:-/mnt}:/mnt
 
@@ -98,7 +100,7 @@ secrets:
       ${SECRETS}/db_apps.config
   drs_cnf:
     file:
-      ${SECRETS}/drs.config
+      ${SECRETS}/drsnew.config
   aws:
     file:
       ${SECRETS}/aws-credentials
