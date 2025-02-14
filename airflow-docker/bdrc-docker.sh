@@ -11,16 +11,6 @@ export INIT_SYS=~/bin/init_sys.sh
 
 source ${INIT_SYS}
 
-# D'OH AIRFLOW_UID is a **BUILD**arg.
-# Test see if this is necessary - when a sync goes through
-# Must be invoked on a system that has the uid service
-#
-# prod
-#xa_uid=$(id -u service)
-# dev (fix aslo in bdrc-docker-compose.yml)
-xa_uid=$(id -u)
-export AIRFLOW_UID="${xa_uid}"
-
 usage() {
   # Brackets without spaces mess up ReST
   echo "Usage: ${ME}  [ -h|--help ]  [ -m|--requirements <dag-requirements-file> ] [ -d|--build_dir <build-dir> ]"
@@ -37,7 +27,6 @@ usage() {
 
 prepare_pyPI_requirements() {
   # Merge StagingGlacier and sync requirements
-  # ARG - no /tmp - must be local
   if [[ ! -d ${1:-"MRMXYZPTLK"} ]] ; then
     log_echo ${1} must exist, but doesnt. Cannot continue.
     exit 1
@@ -54,7 +43,7 @@ export COMPOSE_BDRC_DOCKER=bdrc-docker-compose.yml
 export COMPOSE_BDRC_DOCKERFILE=Dockerfile-bdrc
 export BIN=bin
 export AUDIT_HOME=
-export BUILD_CONFIG_ROOT=.config
+# export BUILD_CONFIG_ROOT=.config
 
 #
 # Location for everything that needs to be added to the image.
@@ -64,14 +53,6 @@ export COMPOSE_BUILD_DIR=~/tmp/compose-build
 # See README.rst
 export DEV_DIR=~/dev
 export AUDIT_TOOL_INSTALLER=audit-v1-beta_1.0-beta-1-2022-05-12_amd64.deb
-
-# Build the path to an audit tool config
-# This is for the Dockerfile-bdrc.
-# You can always update at run time
-# docker cp ~/.config/blasdlasd ./config/blash
-
-# this var is needed in bdrc-docker-compose.yml
-
 
 build_flag=
 CLI_ARGS="$@"
@@ -96,11 +77,7 @@ while true; do  # Parse command line options
 	    usage
 	    exit 1
 	    ;;
-	
-	-c|--config_dir)
-	    CONFIG_SRC_HOME=$2
-	    shift 2
-	    ;;
+
 	--)
 	    shift
 	    break
@@ -111,11 +88,6 @@ while true; do  # Parse command line options
     esac
 done
 
-xx=${CONFIG_SRC_HOME?"-c|--config_dir is required"}
-
-[[ ! -d ${CONFIG_SRC_HOME} ]] &&  { echo  $CONFIG_SRC_HOME not found or not a directory; exit 2 ; }
-[[ ! -r ${CONFIG_SRC_HOME} ]] &&  { echo  $CONFIG_SRC_HOME not a readable directory ; exit 5 ; }
-   
 export DAG_REQUIREMENTS=${tdag:-$DAG_REQUIREMENTS_DEFAULT}
 log_echo "${ME} ${CLI_ARGS} "
 
@@ -144,7 +116,7 @@ mkdir -p "${COMPOSE_BUILD_DIR}"/${BIN}
 # See docker compose args
 
 #------    Stage sync scripts
-# FML - arg to copylinksToBin has to be absolute because of its stupid pushdir
+# FML - argu,ent to copylinksToBin has to be absolute because of its stupid pushdir
 # Also note the echo has to be blank (copyLinksToBin has an escape clause)
 $DEV_DIR/archive-ops/scripts/syncAnywhere/deployment/copyLinksToBin $(readlink -f "${COMPOSE_BUILD_DIR}/${BIN}") < <(echo "")
 
@@ -164,21 +136,10 @@ if [[ ! -f ${COMPOSE_BUILD_DIR}/${AUDIT_TOOL_INSTALLER} ]] ; then
   wget -O ${COMPOSE_BUILD_DIR}/${AUDIT_TOOL_INSTALLER}  https://github.com/buda-base/asset-manager/releases/download/v1.0-beta/${AUDIT_TOOL_INSTALLER}
 fi
 
-# ----- set up config
-# WARNING - the user has to pre-set the config dir. This is a hack.
-mkdir -p ${COMPOSE_BUILD_DIR}/${BUILD_CONFIG_ROOT}
-#
-log_echo "Setting up config"
-# The /*t  is important - copy the contents, not the container.
-cp -r ${CONFIG_SRC_HOME}/* ${COMPOSE_BUILD_DIR}/${BUILD_CONFIG_ROOT}
-#
-
-
 #
 # finally, do_real_work
-# What were formerly build args are now environment
 
-log_echo 
+log_echo docker compose --file "${COMPOSE_BDRC_DOCKER}" build  --no-cache $@
 docker compose --file "${COMPOSE_BDRC_DOCKER}" build  --no-cache $@
 
 
