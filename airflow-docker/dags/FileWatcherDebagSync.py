@@ -35,7 +35,8 @@ import SyncOptionBuilder as sb
 from staging_utils import *
 
 # Do Once only. Seems to survive process boundaries.
-# You can also do this in the UI  (Admin -> Connections
+# 2025 update - this is no longer necessary. Levin in place
+# You can also do this in the UI  (dac_specialAdmin -> Connections
 
 # from airflow import settings
 # from airflow.models import Connection
@@ -157,17 +158,24 @@ LOG.info(f"{MY_WEB_DEST=}")
 # See docker-compose.yml for the roots/home/a
 #
 BASE_PATH = Path.home() / "bdrc" / "data"
-# This was when we were local
+# Where feeder gets its work from
 DOWNLOAD_PATH: Path = BASE_PATH / "Incoming"
+
+# This was when we were local
+# Bse of all processing done here
+WORK_PATH = BASE_PATH / "work"
 
 # Processing resources
 #
 # Feeder DAG moves files here.
-READY_PATH: Path = DOWNLOAD_PATH / "ready"
+READY_PATH: Path = WORK_PATH / "ready"
 # wait_for_files task moves files here for them to work on
-PROCESSING_PATH: Path = DOWNLOAD_PATH / "in_process"
-# debag copies them here before destroying the original
-RETENTION_PATH: Path = DOWNLOAD_PATH / "save"
+PROCESSING_PATH: Path = WORK_PATH / "in_process"
+
+# jimk: changed preservaton task to feeder, which moves and then copies.
+# feeder copies them here before destroying the original
+FEEDER_SOURCE: Path = Path('/mnt','sync-transfer')
+RETENTION_PATH: Path = FEEDER_SOURCE / "save"
 # debag destination
 STAGING_PATH = BASE_PATH / "work"
 
@@ -479,7 +487,7 @@ with DAG('feeder',
          default_args=default_args,
          max_active_runs=1) as feeder:
     @task
-    def feed_files(src_path: Path, dest_path: Path):
+    def feed_files(src_path: Path, save_path: Path, dest_path: Path):
         """
         Replenishes the ready directory
         :return:
@@ -507,14 +515,20 @@ with DAG('feeder',
             # _m is str
             if not to_move:
                 LOG.info(f"No  {ZIP_GLOB} in {src_path=}")
+            else:
+                save_path.mkdir( parents=True, exist_ok=True)
             for _m in to_move:
-                LOG.info(f"Moving {_m} to {dest_path}/{Path(_m).name}")
-                shutil.move(_m, dest_path)
+                _f = Path(_m).name
+                save_f: Path = save_path / _f
+                LOG.info(f"Moving {_m} to {save_f}")
+                shutil.move(_m, save_path)
+                LOG.info(f"Copying {save_f} to {dest_path}/ {_f}")
+                shutil.copy(save_path / _f, dest_path / _f)
         else:
             LOG.info("No need to feed")
 
 
-    feed_files(DOWNLOAD_PATH, READY_PATH)
+    feed_files(FEEDER_SOURCE, RETENTION_PATH,  READY_PATH)
 
 if __name__ == '__main__':
     # noinspection PyArgumentList

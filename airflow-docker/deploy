@@ -43,7 +43,8 @@ function usage() {
   echo "  It is not used with -s and -d, and does not require --dev|--prod arguments"
 }
 init_test_env() {
-
+  # See ./bdrc-docker-compose.yml scheduler -> volumes:  for mount points
+  # Make the staging directories.
   # Make archive roots
   for d in $(seq 0 99); do
     todo=${1}/Archive$(($d / 25))/$(printf "%02d" $d)
@@ -51,12 +52,9 @@ init_test_env() {
     chmod -R 777 $todo
   done
 
-  # Set up the work directory that the production environment needs
-  # Make download target
-#  todo="${1}/AO-staging-Incoming/bag-download"
-#  mkdir -p $todo || exit 1
-#  chmod -R 777 "${1}/AO-staging-Incoming"
-
+  # Make the staging directories.
+  # See /etc/fstab on sattva
+  mkdir -p ${1}/sync-transfer
 }
 
 OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env,dev,prod -- "$@")

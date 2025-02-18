@@ -83,6 +83,7 @@ services:
       #      dags/glacier_staging_to_sync init_env
       #      ./deploy
       - ${ARCH_ROOT:-/mnt}/processing/logs:/home/airflow/bdrc/log
+      # See FileWatcherDebagSync
       # airflow user links
       - ./bin:/home/airflow/bin
       - ./.config:/home/airflow/.config
