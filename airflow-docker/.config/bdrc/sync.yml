@@ -1,0 +1,29 @@
+# Drop this file into <WorkName>/config/sync.yml
+# Column 1 in the next table are the legal values for the the -T flag in audit tool
+# audit-tool -Q to get the updated list
+# EXIFArchiveThumbnail          	Image EXIF Thumbnail Test
+# NoFoldersInImageGroups        	No folders allowed in Image Group folders
+# EXIFArchiveTest               	Archive Valid EXIF Test
+# EXIFArchiveThumbnail          	Archive EXIF Thumbnail Test
+# FileSequence                  	File Sequence Test
+# WebImageAttributes            	Web Image Attributes
+# NoFilesInFolder               	No Files in Root Folder
+# FileSizeTests                 	File Size Test
+# EXIFImageTest                 	Image Valid EXIF Test
+# ImageFileNameFormat           	Image file name format test
+#
+# When adding, be sure to use python list notation: pre: [ 'value','value2'....]
+# It doesn't matter if there are multiple tokens in each line
+audit:
+  # Empty means no options
+  # Examples:
+  # pre: [ '-T EXIFArchiveThumbnail,EXIFArchiveTest' ]
+  # pre: [ '-T', 'EXIFArchiveThumbnail,EXIFArchiveTest', '-D', 'maximumImageFileSize=1000000' ]
+  pre: []
+  post: []
+  
+sync:
+  archive: true
+  web: true
+  replace: false
+  update_web : true
