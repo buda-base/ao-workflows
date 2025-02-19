@@ -61,7 +61,7 @@ except:
 # Use this file if it is under the Work root
 WORK_SYNC_YAML_PATH: Path = Path("config", "sync.yml")
 # Use this path if the docker container can access it
-SITE_SYNC_YAML_PATH: Path = Path(".config", "bdrc", "sync.yml")
+SITE_SYNC_YAML_PATH: Path = Path(".config", "bdrc", "site-sync.yml")
 DEFAULT_SYNC_YAML: str = """
 audit:
     # Empty means run all tests, no extra args
