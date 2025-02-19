@@ -457,7 +457,7 @@ with DAG('down_scheduled',
          end_date=DAG_END_DATETIME,
          # try using feeds settings
          default_args=default_args,
-         max_active_runs=5
+         max_active_runs=2
          ) as get_one:
     start = EmptyOperator(
         task_id='start'
