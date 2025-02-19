@@ -89,6 +89,9 @@ _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp") if not os.path.exist
 # Use S3Path, if we ever use this var. For now, but this layer is just passing it on
 _DEV_WEB_DEST: str = "s3://manifest.bdrc.org/Works"
 
+# dev or test invariant
+MY_FEEDER_HOME: Path = Path(_DEV_DEST_PATH_ROOT, "sync-transfer")
+
 _DOCKER_DEST_PATH_ROOT: str = "/mnt"
 _PROD_DEST_PATH_ROOT: str = _DOCKER_DEST_PATH_ROOT
 #
@@ -141,6 +144,7 @@ LOG.info(f"{DAG_START_DATETIME=}")
 LOG.info(f"{DAG_END_DATETIME=}")
 LOG.info(f"{MY_DB=}")
 LOG.info(f"{MY_DEST_PATH_ROOT=}")
+LOG.info(f"{MY_FEEDER_HOME=}")
 LOG.info(f"{MY_WEB_DEST=}")
 # OK to leave local - $ARCH_ROOT in the .env makes this safe pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
 
@@ -174,8 +178,7 @@ PROCESSING_PATH: Path = WORK_PATH / "in_process"
 
 # jimk: changed preservaton task to feeder, which moves and then copies.
 # feeder copies them here before destroying the original
-FEEDER_SOURCE: Path = Path('/mnt','sync-transfer')
-RETENTION_PATH: Path = FEEDER_SOURCE / "save"
+RETENTION_PATH: Path = MY_FEEDER_HOME / "save"
 # debag destination
 STAGING_PATH = BASE_PATH / "work"
 
@@ -519,18 +522,23 @@ with DAG('feeder',
                 _f = Path(_m).name
                 save_f: Path = save_path / _f
                 LOG.info(f"Moving {_m} to {save_f}")
+                # if save_path exists, remove it
+                if save_f.exists():
+                    LOG.warning(f"existing sync transfer being removed: {save_f}")
+                    save_f.unlink()
                 shutil.move(_m, save_path)
                 LOG.info(f"Copying {save_f} to {dest_path}/ {_f}")
-                shutil.copy(save_path / _f, dest_path / _f)
+                atomic_copy(save_f, dest_path / _f)
         else:
             LOG.info("No need to feed")
 
 
-    feed_files(FEEDER_SOURCE, RETENTION_PATH,  READY_PATH)
+    feed_files(MY_FEEDER_HOME, RETENTION_PATH,  READY_PATH)
+
 
 if __name__ == '__main__':
     # noinspection PyArgumentList
-    # feeder.test()
+    feeder.test()
 
-    get_one.test()
+    # get_one.test()
     # gs_dag.cli()

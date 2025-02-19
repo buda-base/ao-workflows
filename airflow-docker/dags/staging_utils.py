@@ -374,7 +374,26 @@ def iter_or_return(obj):
         yield from obj
 
 
+def atomic_copy(src: Path, dst:Path):
+    """Copies a file, saving the rename until the copy is complete
+    :param src: Source file to copy
+    :param dst: Destination file to copy to
+    """
+    import tempfile
+    # Create a temporary file in the same directory as the destination
+    dir_name, base_name = os.path.split(dst)
+    with tempfile.NamedTemporaryFile(dir=dir_name, delete=False) as tmp_file:
+        temp_name = tmp_file.name
 
+    try:
+        # Copy the source file to the temporary file
+        shutil.copyfile(src, temp_name)
+        # Rename the temporary file to the destination file
+        os.rename(temp_name, dst)
+    except Exception as e:
+        # Clean up the temporary file in case of an error
+        os.remove(temp_name)
+        raise e
 # DEBUG: Local
 if __name__ == '__main__':
     pass
