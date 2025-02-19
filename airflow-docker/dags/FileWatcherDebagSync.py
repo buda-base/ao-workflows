@@ -416,7 +416,7 @@ def cleanup(**context):
     """
     # Use the same paths that were input to 'sync'
     # p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=EXTRACTED_CONTEXT_KEY)
-    p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
+    p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID, WAIT_FOR_FILE_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
     run_id = pathable_airflow_run_id(context['run_id'])
 
     # deduplicate
