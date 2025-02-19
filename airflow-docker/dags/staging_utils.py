@@ -387,11 +387,16 @@ def atomic_copy(src: Path, dst:Path):
 
     try:
         # Copy the source file to the temporary file
+        LOG.info(f"Copying {src} to {temp_name}")
         shutil.copyfile(src, temp_name)
         # Rename the temporary file to the destination file
+        LOG.info(f"Renaming {temp_name} to {dst}")
         os.rename(temp_name, dst)
+        LOG.info("atomic copy complete")
     except Exception as e:
         # Clean up the temporary file in case of an error
+        import sys
+        LOG.exception(f"Error copying {src} to {dst}", exc_info=sys.exc_info())
         os.remove(temp_name)
         raise e
 # DEBUG: Local

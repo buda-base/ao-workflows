@@ -526,8 +526,9 @@ with DAG('feeder',
                 if save_f.exists():
                     LOG.warning(f"existing sync transfer being removed: {save_f}")
                     save_f.unlink()
+                LOG.info(f"Moving {_m} to {save_f}")
                 shutil.move(_m, save_path)
-                LOG.info(f"Copying {save_f} to {dest_path}/ {_f}")
+                LOG.info(f"Moved.")
                 atomic_copy(save_f, dest_path / _f)
         else:
             LOG.info("No need to feed")
