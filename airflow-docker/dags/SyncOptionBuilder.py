@@ -24,6 +24,7 @@ from pathlib import Path
 import yaml
 from pendulum import DateTime
 import logging
+
 LOG = logging.getLogger("airflow.task")
 
 from staging_utils import get_db_config
@@ -51,9 +52,16 @@ except:
     util_ver = "Unknown"
 
 # SYNC config
-#
+# Search hierarchy:
+# <workrid>/config/sync.yml
+# $HOME/.config/bdrc/site-sync.yml
+# Internal default
+# See routine get_sync_options()
+
 # Use this file if it is under the Work root
-DEFAULT_SYNC_YAML_PATH: Path = Path("config", "sync.yml")
+WORK_SYNC_YAML_PATH: Path = Path("config", "sync.yml")
+# Use this path if the docker container can access it
+SITE_SYNC_YAML_PATH: Path = Path(".config", "bdrc", "sync.yml")
 DEFAULT_SYNC_YAML: str = """
 audit:
     # Empty means run all tests, no extra args
@@ -145,19 +153,27 @@ def deep_search(dictionary, key) -> object:
     # return results
 
 
-def get_sync_options(sync_config_path: Path, default_config: str) -> {}:
+def get_sync_options(sync_config_path: Path, site_default_path: Path, default_config: str) -> {}:
     """
-    Parse the yaml file, merging it with the dictionary resulting from the default. values in the
+    Parse yaml files. merging it with the dictionary resulting from the default. values in the
     sync_config_path take precedence over the default_config, but the sync_config_path yaml need not
-    be complete
+    be complete. If there is no file at sync_config_path, the site_default_path is merged. is returned
+    If there is no file at site_default_path, the default_config is simply returned.
     :param sync_config_path: Path to user provided sync overrides
     :param default_config: the default yaml as a string
     :return: the default_config dictionary with the sync_config_path values merged in
     """
     import yaml
+    override_doc:{} = {}
     base_doc = yaml.safe_load(default_config)
     if sync_config_path and os.path.exists(sync_config_path):
         override_doc = yaml.safe_load(sync_config_path.read_text())
+    elif site_default_path and os.path.exists(site_default_path):
+        override_doc = yaml.safe_load(site_default_path.read_text())
+    else:
+        LOG.warning(f"Could not find sync config file at {sync_config_path} or {site_default_path}. Using internal defaults: {default_config}")
+
+    if override_doc:
         merge_yaml(base_doc, override_doc)
 
     return base_doc
@@ -354,7 +370,7 @@ def build_sync(start_time: DateTime, prod_level, src: os.PathLike, archive_dest:
     :return: (environment, command_string
     """
     build_arg_map(archive_dest, web_dest, SYNC_COMMAND_ARG_MAP)
-    directives_dict = get_sync_options(Path(src, DEFAULT_SYNC_YAML_PATH), DEFAULT_SYNC_YAML)
+    directives_dict = get_sync_options(Path(src, WORK_SYNC_YAML_PATH), SITE_SYNC_YAML_PATH, DEFAULT_SYNC_YAML)
     # rebuild the env for each work - the local config file may have something to add
     env: {} = build_sync_env(start_time, prod_level, get_db_config(prod_level))
 

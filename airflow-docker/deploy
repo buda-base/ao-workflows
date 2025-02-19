@@ -137,7 +137,8 @@ mkdir -p "${SECRETS}"
 cp -vp ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
 
 mkdir -p ${DEPLOY}/.config/bdrc/auditTool
-cp -vp ~/.config/bdrc/auditTool/user.properties ${DEPLOY}/.config/bdrc/auditTool || exit 1
+cp -vp .config/bdrc/auditTool/user.properties ${DEPLOY}/.config/bdrc/auditTool || exit 1
+cp -vp .config/bdrc/site-sync.yml ${DEPLOY}/.config/bdrc || exit 1
 #
 # These section names, 'default' and 'ap_northeast', are hard-coded in the dags/..py
 log_echo aws default

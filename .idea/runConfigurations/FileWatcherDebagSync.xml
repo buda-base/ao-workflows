@@ -9,7 +9,7 @@
       <env name="PYDEV_DEBUG" value="YES" />
     </envs>
     <option name="SDK_HOME" value="" />
-    <option name="WORKING_DIRECTORY" value="$USER_HOME$/tmp" />
+    <option name="WORKING_DIRECTORY" value="$USER_HOME$/bdrc/data" />
     <option name="IS_MODULE_SDK" value="true" />
     <option name="ADD_CONTENT_ROOTS" value="true" />
     <option name="ADD_SOURCE_ROOTS" value="true" />
@@ -22,7 +22,7 @@
     <option name="REDIRECT_INPUT" value="false" />
     <option name="INPUT_FILE" value="" />
     <method v="2">
-      <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_bash prep debag sync" />
+      <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_prep config" />
     </method>
   </configuration>
 </component>

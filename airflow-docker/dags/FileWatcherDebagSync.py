@@ -188,7 +188,7 @@ os.makedirs(READY_PATH, exist_ok=True)
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 os.makedirs(STAGING_PATH, exist_ok=True)
 os.makedirs(PROCESSING_PATH, exist_ok=True)
-os.makedirs(RETENTION_PATH, exist_ok=True)
+
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
 DEST_PATH: Path = Path(MY_DEST_PATH_ROOT, "Archive")
@@ -258,8 +258,6 @@ def stage_in_task(**context) -> (Path, Path):
     LOG.info(f"Run ID: {run_data_path}, Task ID: {task_id}")
 
     staging_path: Path = Path(STAGING_PATH, run_data_path, task_id)
-    LOG.info(f"Copying incoming {detected} to {RETENTION_PATH}. Using {staging_path} as the staging area")
-    shutil.copy(detected, RETENTION_PATH)
 
     empty_contents(staging_path)
     return detected, staging_path
