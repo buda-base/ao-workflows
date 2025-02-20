@@ -182,10 +182,13 @@ RETENTION_PATH: Path = MY_FEEDER_HOME / "save"
 # debag destination
 STAGING_PATH = BASE_PATH / "work"
 
+# This constant is both the number of instances of the sync dag, and the number of files that
+# the Feeder dag needs to replenish.
+SYNC_DAG_NUMBER_INSTANCES: int = 3
 # Number of files that triggers the feeder dag
-PROCESSING_LOW_LIMIT: int = 2
+PROCESSING_LOW_LIMIT: int = 1
 # Maximum number of files to be in the processing queue
-PROCESSING_HIGH_LIMIT: int = 20
+PROCESSING_HIGH_LIMIT: int = SYNC_DAG_NUMBER_INSTANCES
 
 os.makedirs(READY_PATH, exist_ok=True)
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
@@ -457,7 +460,7 @@ with DAG('down_scheduled',
          end_date=DAG_END_DATETIME,
          # try using feeds settings
          default_args=default_args,
-         max_active_runs=5
+         max_active_runs=SYNC_DAG_NUMBER_INSTANCES
          ) as get_one:
     start = EmptyOperator(
         task_id='start'
