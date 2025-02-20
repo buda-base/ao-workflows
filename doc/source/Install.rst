@@ -115,15 +115,20 @@ the ``.`` in ``./logs`` is the ``--dest`` directory of the ``deploy`` command.
 
 .. code-block:: bash
 
-    ./deploy -h
-    Usage: deploy [-h|--help] -s|--source <source-dir> -d|--dest <deploy-dir> [-i|--init-env <deploy-dir>]
+      ❯ ./deploy -h
+    Usage: deploy [-h|--help] -s|--source <source-dir> -d|--dest <deploy-dir> [-i|--init-env <deploy-dir>] <--dev|--prod>
     Create and deployment directory for the airflow docker compose service
       -h|--help
       -s|--source <source-dir>: source directory
       -d|--dest <deploy-dir>: deployment directory
       -i|--init-env <deploy-dir>: initialize test environment AFTER creating it with --s and --d
+      --dev| prod: development or production deployment. **REQUIRED** with -s and -d, not with -i
 
-the ``-i|--init-env`` is used standalone to build an empty tree of the RS archive for testing.
+The -i|--init-env is used standalone to build a local copy RS archive for testing.
+  It is not used with -s and -d, and does not require --dev|--prod arguments
+
+
+the ``-i|--init-env`` is used standalone to build an empty tree of the RS archive for testing. You don't need it for production (if you are reusing a deployment target for production, it's ok to have these artifacts in the run directory, but you risk confusion.
 You need to manually reference its output in the bdrc-docker-compose.yaml scheduler:volumes:
 The ``scheduler`` service executes the airflow DAGS, and manages the logs. Therefore,
 it is the service that needs access to the host platform. The ``deploy`` script
@@ -141,6 +146,10 @@ It also:
 - populates the secrets that the scheduler service needs.
       - database passwords
 - AWS credentials
+
+- default config for ``audit-tool``
+
+- default config.yml for the sync task in the ``down_scheduled`` DAG
 
 Note that secrets are used exclusively by Python code - other applications, such as the bash sync script need specific additions that are built into the ``bdrc-airflow`` image.
 

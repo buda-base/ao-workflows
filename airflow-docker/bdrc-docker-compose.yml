@@ -13,21 +13,12 @@ x-environment: &airflow_environment
   - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
 # jimk ao14 local change
   - TZ=America/New_York
+# jimk aow32 - comment for prod
+#  - PYDEV_DEBUG=YES
 
-# x-airflow-image: &airflow_image apache/airflow:2.0.0-python3.8
-# jimk - lets get frisky
 # See ./Dockerfile-bdrc
-# x-airflow-image: &airflow_image ${COMPOSE_AIRFLOW_IMAGE}
 x-airflow-image: &airflow_image bdrc-airflow
-#
-# Bit of a bust
-#x-pycharm-helper: &pycharm_helper pycharm_helpers:PY-233.11799.298
-##x-pycharm-env: &pycharm_env
-##  - PYCHARM_DEBUG=True
-##  - PYCHARM_DEBUG_PORT=12345
-##  - PYCHARM_DEBUG_HOST=host.docker.internal
-##  -
-x-dbrc-log: &bdrc_log qa
+
 # ====================================== /AIRFLOW ENVIRONMENT VARIABLES ======================================
 services:
   any-name:
@@ -37,8 +28,6 @@ services:
       args:
         SYNC_SCRIPTS_HOME: ${BIN}
         PY_REQS: ${COMPOSE_PY_REQS}
-        CONFIG_ROOT: ${BUILD_CONFIG_ROOT}
-
     image: *airflow_image
 
   postgres:
@@ -67,15 +56,6 @@ services:
       - "8089:8080"
     volumes:
       - ./logs:/opt/airflow/logs
-      # DEV/TEST use bind mounts
-      # Debian prb: two services on the same /opt/airflow logs? webserver says it can't write. I only care scheduler
-      # Could it be that both webserver and scheduler need this?
-      # Or neither?
-
-      #all of a sudden, I need to do this under Debian ?
-      # No, in fact it breaks things
-      # - /home/jimk/dev/ao-workflows/StagingGlacierProcess:/opt/airflow/dags
-
     environment: *airflow_environment
     command: webserver
 
@@ -89,25 +69,10 @@ services:
     volumes:
       # System logs
       - ./logs:/opt/airflow/logs
-      # bind mount for download sink. Needed because 1 work's bag  overflows
-      # the available "space" in the container.
-      # See dags/glacier_staging_to_sync.py:download_from_messages
-      #
-      # IMPORTANT: Use local storage for download and work. For efficiency
-      # IMPORTANT: The whole tree on the source must be created before
-      # IMPORTANT: Nah, don't - use /mnt for /mnt.
-      # For intra-server transfers (e.g. copy to the 'ready' dir,)
-      # you can use the DSM UI
-      # 
-      - ${ARCH_ROOT:-/mnt}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data
-      # DEBUG_DEV
-      # For testing on local mac. This is a good reason for not
-      # using files, but a service. Note this folder has to match test_access_permissions.py
-      #  - /mnt/Archive0/00/TestArchivePermissions:/home/airflow/extern/Archive0/00/TestArchivePermissions
-      # - ${ARCH_ROOT:-/mnt}/Archive0:/home/airflow/extern/Archive0
-      # - ${ARCH_ROOT:-/mnt}/Archive1:/home/airflow/extern/Archive1
-      # - ${ARCH_ROOT:-/mnt}/Archive2:/home/airflow/extern/Archive2
-      # - ${ARCH_ROOT:-/mnt}/Archive3:/home/airflow/extern/Archive3
+      # In DEV, ARCH_ROOT is set, so that it has to have an AO-staging-Incoming & etc
+      # - ${ARCH_ROOT:-/mnt}/AO-staging-Incoming/bag-download:/home/airflow/bdrc/data
+      # aow32 - local work
+      - ./data:/home/airflow/bdrc/data
       # ao-workflows-18 - dip_log match fs
       - ${ARCH_ROOT:-/mnt}:/mnt
 
@@ -118,6 +83,10 @@ services:
       #      dags/glacier_staging_to_sync init_env
       #      ./deploy
       - ${ARCH_ROOT:-/mnt}/processing/logs:/home/airflow/bdrc/log
+      # See FileWatcherDebagSync
+      # airflow user links
+      - ./bin:/home/airflow/bin
+      - ./.config:/home/airflow/.config
     environment: *airflow_environment
     command: scheduler
 
@@ -132,11 +101,7 @@ secrets:
       ${SECRETS}/db_apps.config
   drs_cnf:
     file:
-      ${SECRETS}/drs.config
+      ${SECRETS}/drsnew.config
   aws:
     file:
       ${SECRETS}/aws-credentials
-
-# volumes:
-#   staging:
-#    logs:   

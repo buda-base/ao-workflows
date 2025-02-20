@@ -9,7 +9,11 @@ set -e
 export ME=$(basename $0)
 . ~/bin/init_sys.sh
 
-#region CONST
+# ----------------    CONST ---------------------------
+
+_DEV_PROD_LEVEL="DEV"
+_PROD_PROD_LEVEL="PROD"
+
 # Allows RW access to RS Archives
 # prod:
 # Prod userid should be `service` uid on bodhi & sattva
@@ -23,27 +27,24 @@ _DEV_SYNC_ACCESS_UID=5000
 
 _PROD_ARCH_ROOT=
 _DEV_ARCH_ROOT=.
+# ----------------   /CONST ---------------------------
 
-MY_SYNC_ACCESS_UID=${_PROD_SYNC_ACCESS_UID}
-MY_ARCH_ROOT=${_PROD_ARCH_ROOT}
 
-# MY_SYNC_ACCESS_UID=${_DEV_SYNC_ACCESS_UID}
-# MY_ARCH_ROOT=${_DEV_ARCH_ROOT}
-
-#endregion
 function usage() {
-  echo "Usage: ${ME} [-h|--help] -s|--source <source-dir> -d|--dest <deploy-dir> [-i|--init-env <deploy-dir>]"
+  echo "Usage: ${ME} [-h|--help] -s|--source <source-dir> -d|--dest <deploy-dir> [-i|--init-env <deploy-dir>] <--dev|--prod>"
   echo "Create and deployment directory for the airflow docker compose service"
   echo "  -h|--help"
   echo "  -s|--source <source-dir>: source directory"
   echo "  -d|--dest <deploy-dir>: deployment directory"
   echo "  -i|--init-env <deploy-dir>: initialize test environment AFTER creating it with --s and --d"
+  echo "  --dev| prod: development or production deployment. **REQUIRED** with -s and -d, not with -i"
   echo ""
-  echo "the -i|--init-env is used standalone to build a local copy of the RS archive for testing."
-  echo "You need to manually reference its output in the bdrc-docker-compose.yaml scheduler:volumes:"
+  echo "the -i|--init-env is used standalone to build a local copy RS archive for testing."
+  echo "  It is not used with -s and -d, and does not require --dev|--prod arguments"
 }
 init_test_env() {
-
+  # See ./bdrc-docker-compose.yml scheduler -> volumes:  for mount points
+  # Make the staging directories.
   # Make archive roots
   for d in $(seq 0 99); do
     todo=${1}/Archive$(($d / 25))/$(printf "%02d" $d)
@@ -51,28 +52,25 @@ init_test_env() {
     chmod -R 777 $todo
   done
 
-  # Set up the work directory that the production environment needs
-  # Make download target
-  todo="${1}/AO-staging-Incoming/bag-download"
-  mkdir -p $todo || exit 1
-  chmod -R 777 "${1}/AO-staging-Incoming"
-
+  # Make the staging directories.
+  # See /etc/fstab on sattva
+  mkdir -p ${1}/sync-transfer
 }
 
-OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env -- "$@")
+OPTIONS=$(getopt -o hs:d:i: --long help,source,dest,init-env,dev,prod -- "$@")
 
 while true; do # Parse command line options
   case "$1" in
   -s | --source)
-    export SRC=${2?"No source directory given."}
+    _SRC=${2?"No source directory given."}
     shift 2
     ;;
   -d | --dest)
-    export DEPLOY=${2?"No deployment directory given."}
+    _DEPLOY=${2?"No deployment directory given."}
     shift 2
     ;;
   -i | --init-env)
-    init_home=${2?"No archival parent directory given."}
+    init_home=${2?"--init-env: No deploy directory given."}
     init_test_env $2
     exit $?
     ;;
@@ -80,7 +78,14 @@ while true; do # Parse command line options
     usage
     exit 1
     ;;
-
+  --dev)
+    _ARG_PROD_LEVEL=$_DEV_PROD_LEVEL
+    shift
+    ;;
+  --prod)
+    _ARG_PROD_LEVEL=$_PROD_PROD_LEVEL
+    shift
+    ;;
   --)
     shift
     break
@@ -91,29 +96,49 @@ while true; do # Parse command line options
   esac
 done
 
-if [[ -z $SRC ]] || [[ -z $DEPLOY ]]; then
-  echo no args. bye
+export SRC=${_SRC?"-s | --source required."}
+export DEPLOY=${_DEPLOY?"-d | --dest required."}
+
+export DEPLOY_PROD_LEVEL=${_ARG_PROD_LEVEL:?"--dev or --prod required"}
+
+
+if [[ $DEPLOY_PROD_LEVEL == $_PROD_PROD_LEVEL ]]; then
+  log_echo "Production deployment"
+  MY_SYNC_ACCESS_UID=${_PROD_SYNC_ACCESS_UID}
+  MY_ARCH_ROOT=${_PROD_ARCH_ROOT}
+elif [[ $DEPLOY_PROD_LEVEL == $_DEV_PROD_LEVEL ]]; then
+  log_echo "Development deployment"
+  MY_SYNC_ACCESS_UID=${_DEV_SYNC_ACCESS_UID}
+  MY_ARCH_ROOT=${_DEV_ARCH_ROOT}
+else
+  log_echo "Unknown deployment level: $DEPLOY_PROD_LEVEL"
   exit 1
 fi
 
+
 [[ ! -d $DEPLOY ]] && {   mkdir $DEPLOY || exit 1 ;  }
-  # jimk aow-14 - add sync logs
-for DD in "$DEPLOY/dags" "$DEPLOY/logs"  "$DEPLOY/plugins" "$DEPLOY/processing" "$DEPLOY/processing/logs" ; do
+# jimk aow-14 - add sync logs
+log_echo "building directories"
+for DD in "$DEPLOY/dags" "$DEPLOY/logs"  "$DEPLOY/plugins" "$DEPLOY/processing" "$DEPLOY/processing/logs" "$DEPLOY/data" ; do
     mkdir -p $DD
     chmod 777 $DD
 done
 
 
 log_echo docker-compose
-cp $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
+cp -pv $SRC/bdrc-docker-compose.yml $DEPLOY/docker-compose.yaml
 log_echo dags
-cp -r $SRC/dags ${DEPLOY}
+cp -rpv $SRC/dags ${DEPLOY}
 
-# Borrowed from bdrc-docker.sh
+# Moved from bdrc-docker.sh
 export SECRETS=$DEPLOY/.docker-secrets
-mkdir -p "${SECRETS}"
 log_echo secrets - bdrc
-cp -v ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
+mkdir -p "${SECRETS}"
+cp -vp ~/.config/bdrc/docker/* "${SECRETS}" || exit 1
+
+mkdir -p ${DEPLOY}/.config/bdrc/auditTool
+cp -vp .config/bdrc/auditTool/user.properties ${DEPLOY}/.config/bdrc/auditTool || exit 1
+cp -vp .config/bdrc/site-sync.yml ${DEPLOY}/.config/bdrc || exit 1
 #
 # These section names, 'default' and 'ap_northeast', are hard-coded in the dags/..py
 log_echo aws default
@@ -133,15 +158,8 @@ COMPOSE_BUILD_DIR=
 # Comment ARCH_ROOT in production, to use the default /mnt in bdrc-docker-compose
 ARCH_ROOT=${MY_ARCH_ROOT}
 #
-# For build only
-BUILD_CONFIG_ROOT=
-
-SYNC_ACCESS_UID=$_PROD_SYNC_ACCESS_UID
+SYNC_ACCESS_UID=$MY_SYNC_ACCESS_UID
 EOF
-
-# They say this is a BUILD image arg, not a runtime arg
-# AIRFLOW_UID=1000 # j...
-# AIRFLOW_GID=0
 
 log_echo "Deployment directory created: $DEPLOY"
 log_echo "manage  the services with: cd $DEPLOY && docker compose [up -d | down | log | exec....."

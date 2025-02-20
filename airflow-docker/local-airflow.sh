@@ -10,7 +10,7 @@
 USAGE="${0} -[ [ w[ebserver]| s[cheduler]] [ u[p]| d[own]]  ] | r[eset] | a[dmin] admin_username admin_password admin_email"
 PORT=8090 # Get out of way of other things. Docker uses 8089, so you can test in parallel
 
-while getopts ":wsudriha" opt; do
+while getopts ":wsudrha" opt; do
     case ${opt} in
 	w)
 	    mode="webserver"

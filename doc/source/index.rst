@@ -11,6 +11,7 @@ Welcome to BDRC Airflow's documentation!
    :caption: Contents:
 
    Install
+   Operation
    Development
    Making
 

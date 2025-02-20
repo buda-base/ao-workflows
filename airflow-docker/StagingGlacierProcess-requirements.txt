@@ -1,9 +1,11 @@
+bdrc-bag==0.0.8a
 boto3~=1.21.21
 bdrc-volume-manifest-builder>=1.2.6
-bdrc-bag>=0.0.7
+# TODO: bump to 0.08
 bdrc-util>=1.0.11
+bdrc-volume-manifest-builder
 botocore~=1.24.21
-apache-airflow-providers-amazon
 # requests==2.31 generates this:
 # ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_' (/Users/jimk/dev/ao-workflows/venv/lib/python3.11/site-packages/urllib3/util/ssl_.py)
 # requests==2.28.2
+pyyaml

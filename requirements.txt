@@ -1,8 +1,28 @@
-dagster==1.0.4
+# dagster==1.0.4
 apache-airflow~=2.8.3
 apache-airflow-providers-amazon
 internetarchive~=3.0.2
+packaging
 -r airflow-docker/StagingGlacierProcess-requirements.txt
+#
+# Severe warning alert.
+# conda install -c conda-forge mysql
+# conda install -c conda-forge pymysql
+# conda install -c conda-forge mysqlclient
+# 0169  conda remove mysql
+# fail 10170  ~/dev/ao-workflows/tests/one_run.cmdline
+# 10171  conda remove mysqlclient
+# fail 10172  ~/dev/ao-workflows/tests/one_run.cmdline
+# 10173  conda install anaconda::mysql
+# fail - dlopen(password)10174  ~/dev/ao-workflows/tests/one_run.cmdline
+# 10175  conda install -c conda-forge pymysql
+# Fail 10176  ~/dev/ao-workflows/tests/one_run.cmdline
+# 10177  conda remove pymysql
+# 10178  conda install -c conda-forge mysqlclient
+# Fail, cant find 'MySqlDb' 10179  ~/dev/ao-workflows/tests/one_run.cmdline
+# 10180  conda install -c conda-forge pymysql
+# Works 10181  ~/dev/ao-workflows/tests/one_run.cmdline
+# conda remove mysql  # who wants the server?
 
 SQLAlchemy~=1.4.51
 pendulum~=3.0.0
