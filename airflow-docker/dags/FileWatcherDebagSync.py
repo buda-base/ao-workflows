@@ -22,6 +22,7 @@ from time import strftime
 from typing import Union, List
 
 import airflow.operators.bash
+from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
 from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowException
@@ -30,6 +31,7 @@ from airflow.operators.python import BranchPythonOperator
 # bag is in pyPI bdrc-bag
 from bag import bag_ops
 from pendulum import DateTime
+from sqlalchemy import text
 
 import SyncOptionBuilder as sb
 from staging_utils import *
@@ -59,11 +61,14 @@ from staging_utils import *
 ZIP_GLOB = "*.zip"
 BAG_ZIP_GLOB = "*.bag.zip"
 EXTRACTED_CONTEXT_KEY: str = "extracted_works"
+SYNC_DATA_KEY: str = "synced_data"
 #
 # Because we use this in multiple places
+WAIT_FOR_FILE_TASK_ID: str = "wait_for_file"
 DEBAG_TASK_ID: str = "debag"
 UNZIP_TASK_ID: str = "unzip"
-WAIT_FOR_FILE_TASK_ID: str = "wait_for_file"
+SYNC_TASK_ID: str = "sync"
+DEEP_ARCHIVE_TASK_ID: str = "deep_archive"
 
 # Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
 #
@@ -378,6 +383,7 @@ def sync(**context):
     for a_down in iter_or_return(downs):
         # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for down in iter_or_return(a_down):
+            work_rid: str = Path(down).stem
             env, bash_command = sb.build_sync(start_time=local_start, prod_level=MY_DB, src=down,
                                               archive_dest=DEST_PATH, web_dest=MY_WEB_DEST)
             LOG.info(f"syncing {down}")
@@ -388,28 +394,11 @@ def sync(**context):
                 env=env
             ).execute(context)
 
-            db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
+            db_phase(GlacierSyncOpCodes.SYNCD, work_rid, db_config=MY_DB, user_data={'synced_path': down})
+            context['ti'].xcom_push(key=SYNC_DATA_KEY, value=(work_rid, down))
 
 
-# GitHub Copilot suggestion to get around "directory not empty" error
 
-def remove_readonly(func, path, _):
-    import stat
-    os.chmod(path, stat.S_IWRITE)
-    func(path)
-
-
-def pathable_airflow_run_id(possible: str) -> str:
-    """
-    transforms a run if into a path that can be used in a shell, by removing characters which could be operands
-    :param possible:
-    :return: the predecessor of any "+" in the string
-    """
-    parseable: str =  possible.replace("+", "Z")
-    #
-    # remove the "scheduled__" or "manual__" prefix
-    skip_path= r"^.*__"
-    return re.sub(skip_path, "", parseable)
 
 
 @task
@@ -436,6 +425,23 @@ def cleanup(**context):
     for r_i_p in run_id_paths:
         LOG.info(f"removing {str(r_i_p)}")
         shutil.rmtree(r_i_p, onerror=remove_readonly)
+
+
+@task
+def deep_archive(**context):
+    """Deep archive a sync'd work"""
+    from collections import namedtuple
+    # Get the sync task's pushed return data
+    work_rid, down = context['ti'].xcom_pull(task_ids=SYNC_TASK_ID, key=SYNC_DATA_KEY)
+
+    # named tuple record
+    da_args = namedtuple('deep_archive_args', ['log_level', 'log_root', 'input_file', 'drsDbConfig', 'incremental', 'complete', 'bucket'])
+    record = namedtuple('record', ['dip_external_id', 'work_name', 'path'])
+    #
+    # Given the work_rid and the path, get the sync's dip_id
+    full_db_conf:str = get_db_config(MY_DB)
+    sync_external_id = get_dip_id(full_db_conf, work_rid, down)
+    from archive_ops.DeepArchive import deep_archive_shell
 
 
 # DAG args for all DAGs
@@ -541,8 +547,10 @@ with DAG('feeder',
 
 
 if __name__ == '__main__':
+    pass
     # noinspection PyArgumentList
-    feeder.test()
+
+    # feeder.test()
 
     # get_one.test()
     # gs_dag.cli()
