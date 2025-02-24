@@ -24,6 +24,6 @@ audit:
   
 sync:
   archive: true
-  web: true
+  web: false
   replace: false
-  update_web : true
+  update_web : false
