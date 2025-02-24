@@ -18,7 +18,6 @@ import fnmatch
 # This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
 # to drop back to datetime.timedelta
 from datetime import timedelta
-from time import strftime
 from typing import Union, List
 
 import airflow.operators.bash
@@ -251,7 +250,7 @@ def stage_in_task(**context) -> (Path, Path):
     """
 
     # sanity check
-    detected: str = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
+    detected: str = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
     if not detected:
         raise AirflowException("No file detected, but wait_for_file returned true")
 
@@ -277,7 +276,7 @@ def _which_file(**context):
     :return: Task id of handler
     """
     # Same as in the step debag
-    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
+    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
 
     if fnmatch.fnmatch(detected, BAG_ZIP_GLOB):
         return DEBAG_TASK_ID
@@ -419,23 +418,25 @@ def cleanup(**context):
     """
     # Use the same paths that were input to 'sync'
     # p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=EXTRACTED_CONTEXT_KEY)
-    p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID, WAIT_FOR_FILE_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
-    run_id = pathable_airflow_run_id(context['run_id'])
+    p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
 
-    # deduplicate
-    run_id_paths: set = set()
+    # aow-36 remove the collected file
+    collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
+    if collected_file:
+        Path(collected_file).unlink(missing_ok=True)
 
+    r_ip_paths: set = set()
+    # remove in_process/work_name and work directory for this run id
     for a_down in iter_or_return(p_to_rm):
         for p in iter_or_return(a_down):
-            # Find the run id, if it is in the path
-            dd = Path(p)
-            if run_id in dd.parts:
-                while dd.name != run_id:
-                    dd = dd.parent
-            run_id_paths.add(dd)
-    for r_i_p in run_id_paths:
+            # The unzipped or debagged directory is two down from the parent of all extracted
+            # works in this run
+            dd = Path(p).parent.parent
+            r_ip_paths.add(dd)
+    for r_i_p in r_ip_paths:
         LOG.info(f"removing {str(r_i_p)}")
         shutil.rmtree(r_i_p, onerror=remove_readonly)
+
 
 
 # DAG args for all DAGs
@@ -542,7 +543,7 @@ with DAG('feeder',
 
 if __name__ == '__main__':
     # noinspection PyArgumentList
-    feeder.test()
+    # feeder.test()
 
-    # get_one.test()
+    get_one.test()
     # gs_dag.cli()
