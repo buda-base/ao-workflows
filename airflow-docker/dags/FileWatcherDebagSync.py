@@ -443,6 +443,14 @@ def deep_archive(**context):
     sync_external_id = get_dip_id(full_db_conf, work_rid, down)
     from archive_ops.DeepArchive import deep_archive_shell
 
+    # set up deep archive args
+    dis: DateTime = context['data_interval_start']
+    da_log_path: str = f"{context['dag'].dag_id}_{dis.in_tz('local').strftime('%Y-%m-%dT%H:%M:%S')}"
+
+    da_log_dir: Path = Path( sb.APP_LOG_ROOT, "deep-archive",  da_log_path)
+    da_log_dir.mkdir(parents=True, exist_ok=True)
+    da.setup(daa)
+
 
 # DAG args for all DAGs
 default_args = {
