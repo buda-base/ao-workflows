@@ -195,10 +195,10 @@ PROCESSING_LOW_LIMIT: int = 1
 # Maximum number of files to be in the processing queue
 PROCESSING_HIGH_LIMIT: int = SYNC_DAG_NUMBER_INSTANCES
 
-os.makedirs(READY_PATH, exist_ok=True)
-os.makedirs(DOWNLOAD_PATH, exist_ok=True)
-os.makedirs(STAGING_PATH, exist_ok=True)
-os.makedirs(PROCESSING_PATH, exist_ok=True)
+READY_PATH.mkdir(parents=True, exist_ok=True)
+DOWNLOAD_PATH.mkdir(parents=True, exist_ok=True)
+STAGING_PATH.mkdir(parents=True, exist_ok=True)
+PROCESSING_PATH.mkdir(parents=True, exist_ok=True)
 
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
@@ -252,7 +252,7 @@ def stage_in_task(**context) -> (Path, Path):
     Stages the Wait for file for unzipping
     :param context: airflow task context
     :return: tuple containing the path of the detected file, and the path to the location it is to be moved
-    to for work.
+    to for work. Creates the location it is to be moved to if it does not exist
     """
 
     # sanity check
@@ -298,8 +298,8 @@ def debag(**context) -> [str]:
     so returning strings
     """
 
+    # stage_in_task creates everything it returns
     detected, staging_path = stage_in_task(**context)
-    os.makedirs(staging_path, exist_ok=True)
 
     # Remove any contents of staging_path
     # Debag returns [pathlib.Path] - supports multiple works per bag
@@ -430,13 +430,11 @@ def cleanup(**context):
 @task
 def deep_archive(**context):
     """Deep archive a sync'd work"""
-    from collections import namedtuple
+    from DeepArchiveFacade import setup, do_one, get_dip_id
     # Get the sync task's pushed return data
     work_rid, down = context['ti'].xcom_pull(task_ids=SYNC_TASK_ID, key=SYNC_DATA_KEY)
 
-    # named tuple record
-    da_args = namedtuple('deep_archive_args', ['log_level', 'log_root', 'input_file', 'drsDbConfig', 'incremental', 'complete', 'bucket'])
-    record = namedtuple('record', ['dip_external_id', 'work_name', 'path'])
+
     #
     # Given the work_rid and the path, get the sync's dip_id
     full_db_conf:str = get_db_config(MY_DB)
@@ -449,7 +447,8 @@ def deep_archive(**context):
 
     da_log_dir: Path = Path( sb.APP_LOG_ROOT, "deep-archive",  da_log_path)
     da_log_dir.mkdir(parents=True, exist_ok=True)
-    da.setup(daa)
+    setup(MY_DB, da_log_dir, MY_WEB_DEST, work_rid, Path(down))
+    do_one()
 
 
 # DAG args for all DAGs
@@ -496,7 +495,7 @@ with DAG('down_scheduled',
         task_id='which_file',
         python_callable=_which_file)
 
-    start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> cleanup()
+    start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> deep_archive() >> cleanup()
 
 with DAG('feeder',
          schedule=timedelta(hours=4),
@@ -560,5 +559,5 @@ if __name__ == '__main__':
 
     # feeder.test()
 
-    # get_one.test()
+    get_one.test()
     # gs_dag.cli()

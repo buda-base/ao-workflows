@@ -15,7 +15,7 @@ LOG = logging.getLogger("airflow.task")
 import boto3
 import pendulum
 
-from sqlalchemy import desc, text
+from sqlalchemy import desc
 
 # ------------------    CONST --------------------
 RUN_SECRETS: Path = Path("/run/secrets")
@@ -357,7 +357,8 @@ def empty_contents(path: Path) -> None:
                 shutil.rmtree(p)
             elif p.is_file():
                 os.remove(p.path)
-
+    else:
+        path.mkdir(parents=True, exist_ok=True)
 
 def iter_or_return(obj):
     """
@@ -422,36 +423,9 @@ def pathable_airflow_run_id(possible: str) -> str:
     skip_path= r"^.*__"
     return re.sub(skip_path, "", parseable)
 
-# write a sqlalchemy command in the context of DrsDbContextBase that gets the results of a SQL text query
-def get_dip_id(db_config: str, work_rid: str, src_folder:str):
-    """
-    Returns the dip_external_id for a work at a path - use the newest one
-    :param db_config: full db config in the form db_handle:/path/to/config
-    :param work_rid:
-    :param src_folder: the source folder for the sync we are trying to deep archive. the actual destination
-    is what get's deep archived, as the source is not assumed to exist on the calling machine
-    :return:
-    """
-    from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
-    with DrsDbContextBase(get_db_config(db_config)) as ctx:
-        from sqlalchemy.orm import Session
-        xs: Session = ctx.get_session()
-        # get the latest
-        query = text("select dip_external_id from dip_activity_work where  dip_activity_types_label = 'ARCHIVE'"
-                     " and WorkName = :work_rid "
-                     "and dip_source_path = :src "
-                     "and dip_activity_finish is not null and dip_activity_result_code = 0 "
-                     "order by dip_activity_finish desc limit 1")
-
-        # write a direct sql query in SqlAlchemy to select dip_external_id from dip_activity_work where WorkName = work_rid and SourcePath = down
-        result = xs.execute(query, {'work_rid': work_rid, 'src': src_folder})
-        rows = result.fetchall()
-        for row in rows:
-            return row[0]
 # DEBUG: Local
 if __name__ == '__main__':
-    print(get_dip_id('prod',"W1NLM6833",
-      "/home/airflow/bdrc/data/work/down_scheduled_2025-02-19T20:45:00/unzip/W1NLM6833"))
+    pass
     #     sqs = create_session('default').client('s3')
     #     print(sqs.list_buckets())
     # path_to_credentials = Path(sys.argv[1])
