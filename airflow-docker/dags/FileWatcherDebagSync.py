@@ -92,7 +92,8 @@ _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(months=1)
 _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp") if not os.path.exists('/run/secrets') else "/mnt"
 #
 # Use S3Path, if we ever use this var. For now, but this layer is just passing it on
-_DEV_WEB_DEST: str = "s3://manifest.bdrc.org/Works"
+_DEV_DEEP_ARCHIVE_DEST: str = "s3://manifest.bdrc.org"
+_DEV_WEB_DEST: str = f"{_DEV_DEEP_ARCHIVE_DEST}/Works"
 
 # dev or test invariant
 MY_FEEDER_HOME: Path = Path(_DEV_DEST_PATH_ROOT, "sync-transfer")
@@ -102,7 +103,7 @@ _PROD_DEST_PATH_ROOT: str = _DOCKER_DEST_PATH_ROOT
 #
 # See ~/dev/archive-ops/scripts/syncAnywhere/sample.config
 _PROD_WEB_DEST: str = "s3://archive.tbrc.org/Works"
-
+_PROD_DEEP_ARCHIVE_DEST: str = "s3://glacier.archive.bdrc.org"
 # ------------- CONFIG CONST  ----------------------------
 
 # region ------------   CONST  ----------------------------
@@ -126,6 +127,7 @@ DAG_END_DATETIME = _PROD_DAG_START_DATE.add(weeks=2)
 MY_DB: str = _PROD_DB
 MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
 MY_WEB_DEST: str = _PROD_WEB_DEST
+MY_DEEP_ARCHIVE_DEST: str = _PROD_DEEP_ARCHIVE_DEST
 
 # When debugging in an IDE, always set a breakpoint here,
 # just to ensure you're not running in production
@@ -142,16 +144,18 @@ if is_debug == "YES":
     # OK to leave local - $ARCH_ROOT in the .env makes this safe
     MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
     MY_WEB_DEST = _DEV_WEB_DEST
+    MY_DEEP_ARCHIVE_DEST: str = _DEV_DEEP_ARCHIVE_DEST
 
 LOG.info(f"{is_debug=}")
 LOG.info(f"{DAG_TIME_DELTA=}")
 LOG.info(f"{DAG_START_DATETIME=}")
 LOG.info(f"{DAG_END_DATETIME=}")
 LOG.info(f"{MY_DB=}")
+# OK to leave MY_DEST_PATH_ROOT  local - $ARCH_ROOT in the .env makes this safe pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
 LOG.info(f"{MY_DEST_PATH_ROOT=}")
 LOG.info(f"{MY_FEEDER_HOME=}")
 LOG.info(f"{MY_WEB_DEST=}")
-# OK to leave local - $ARCH_ROOT in the .env makes this safe pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
+LOG.info(f"{MY_DEEP_ARCHIVE_DEST=}")
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 # --------------- SETUP DAG    ----------------
@@ -282,7 +286,7 @@ def _which_file(**context):
     :return: Task id of handler
     """
     # Same as in the step debag
-    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
+    detected = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
 
     if fnmatch.fnmatch(detected, BAG_ZIP_GLOB):
         return DEBAG_TASK_ID
@@ -413,21 +417,26 @@ def cleanup(**context):
     """
     # Use the same paths that were input to 'sync'
     # p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=EXTRACTED_CONTEXT_KEY)
-    p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID, WAIT_FOR_FILE_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
-    run_id = pathable_airflow_run_id(context['run_id'])
+    p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
 
     # deduplicate
     run_id_paths: set = set()
 
+    # aow-36 remove the collected file
+    collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
+    if collected_file:
+        Path(collected_file).unlink(missing_ok=True)
+
+    r_ip_paths: set = set()
+    # remove in_process/work_name and work directory for this run id
     for a_down in iter_or_return(p_to_rm):
         for p in iter_or_return(a_down):
-            # Find the run id, if it is in the path
-            dd = Path(p)
-            if run_id in dd.parts:
-                while dd.name != run_id:
-                    dd = dd.parent
-            run_id_paths.add(dd)
-    for r_i_p in run_id_paths:
+            # The unzipped or debagged directory is two down from the parent of all extracted
+            # works in this run
+            dd = Path(p).parent.parent
+            r_ip_paths.add(dd)
+
+    for r_i_p in r_ip_paths:
         LOG.info(f"removing {str(r_i_p)}")
         shutil.rmtree(r_i_p, onerror=remove_readonly)
 
@@ -436,24 +445,25 @@ def cleanup(**context):
 def deep_archive(**context):
     """Deep archive a sync'd work"""
     from DeepArchiveFacade import setup, do_one, get_dip_id
-    # Get the sync task's pushed return data
-    work_rid, down = context['ti'].xcom_pull(task_ids=SYNC_TASK_ID, key=SYNC_DATA_KEY)
 
-
-    #
-    # Given the work_rid and the path, get the sync's dip_id
-    full_db_conf:str = get_db_config(MY_DB)
-    sync_external_id = get_dip_id(full_db_conf, work_rid, down)
-    from archive_ops.DeepArchive import deep_archive_shell
-
-    # set up deep archive args
+    # set up deep archive
     dis: DateTime = context['data_interval_start']
     da_log_path: str = f"{context['dag'].dag_id}_{dis.in_tz('local').strftime('%Y-%m-%dT%H:%M:%S')}"
 
     da_log_dir: Path = Path( sb.APP_LOG_ROOT, "deep-archive",  da_log_path)
     da_log_dir.mkdir(parents=True, exist_ok=True)
-    setup(MY_DB, da_log_dir, MY_WEB_DEST, work_rid, Path(down))
-    do_one()
+    # Get the sync task's pushed return data
+    syncs:[] = context['ti'].xcom_pull(task_ids=SYNC_TASK_ID, key=SYNC_DATA_KEY)
+
+
+    #
+    # Given the work_rid and the path, get the sync's dip_id
+    for sync_data in syncs:
+        work_rid, down = sync_data
+
+    # set up deep archive args
+        setup(MY_DB, da_log_dir, MY_DEEP_ARCHIVE_DEST, work_rid, Path(down))
+        do_one()
 
 
 # DAG args for all DAGs

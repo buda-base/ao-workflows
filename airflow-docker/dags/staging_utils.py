@@ -20,6 +20,7 @@ from sqlalchemy import desc
 # ------------------    CONST --------------------
 RUN_SECRETS: Path = Path("/run/secrets")
 LOCK_FILE: str = '/tmp/CollectingWatcherLock.lock'
+COLLECTED_FILE_KEY: str = 'collected_file'
 
 
 
@@ -61,7 +62,7 @@ class CollectingSingleFileSensor(FileSensor):
                 target_path = self.processing_path / target_match.name
                 shutil.move(target_match, target_path)
                 # push the moved file onto the response stack
-                context['ti'].xcom_push(key='collected_file', value=str(target_path))
+                context['ti'].xcom_push(key=COLLECTED_FILE_KEY, value=str(target_path))
                 LOG.info(f"Located {target_match} and moved to {target_path}")
                 return True
             else:
