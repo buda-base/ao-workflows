@@ -20,7 +20,9 @@ from sqlalchemy import desc
 # ------------------    CONST --------------------
 RUN_SECRETS: Path = Path("/run/secrets")
 LOCK_FILE: str = '/tmp/CollectingWatcherLock.lock'
-COLLECTED_FILE_KEY = 'collected_file'
+
+COLLECTED_FILE_KEY: str = 'collected_file'
+
 
 
 
@@ -358,7 +360,8 @@ def empty_contents(path: Path) -> None:
                 shutil.rmtree(p)
             elif p.is_file():
                 os.remove(p.path)
-
+    else:
+        path.mkdir(parents=True, exist_ok=True)
 
 def iter_or_return(obj):
     """
@@ -400,6 +403,29 @@ def atomic_copy(src: Path, dst:Path):
         LOG.exception(f"Error copying {src} to {dst}", exc_info=sys.exc_info())
         os.remove(temp_name)
         raise e
+
+
+
+# GitHub Copilot suggestion to get around "directory not empty" error
+
+def remove_readonly(func, path, _):
+    import stat
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def pathable_airflow_run_id(possible: str) -> str:
+    """
+    transforms a run if into a path that can be used in a shell, by removing characters which could be operands
+    :param possible:
+    :return: the predecessor of any "+" in the string
+    """
+    parseable: str =  possible.replace("+", "Z")
+    #
+    # remove the "scheduled__" or "manual__" prefix
+    skip_path= r"^.*__"
+    return re.sub(skip_path, "", parseable)
+
 # DEBUG: Local
 if __name__ == '__main__':
     pass

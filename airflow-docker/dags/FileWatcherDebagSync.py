@@ -21,6 +21,7 @@ from datetime import timedelta
 from typing import Union, List
 
 import airflow.operators.bash
+from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
 from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowException
@@ -29,6 +30,7 @@ from airflow.operators.python import BranchPythonOperator
 # bag is in pyPI bdrc-bag
 from bag import bag_ops
 from pendulum import DateTime
+from sqlalchemy import text
 
 import SyncOptionBuilder as sb
 from staging_utils import *
@@ -58,11 +60,14 @@ from staging_utils import *
 ZIP_GLOB = "*.zip"
 BAG_ZIP_GLOB = "*.bag.zip"
 EXTRACTED_CONTEXT_KEY: str = "extracted_works"
+SYNC_DATA_KEY: str = "synced_data"
 #
 # Because we use this in multiple places
+WAIT_FOR_FILE_TASK_ID: str = "wait_for_file"
 DEBAG_TASK_ID: str = "debag"
 UNZIP_TASK_ID: str = "unzip"
-WAIT_FOR_FILE_TASK_ID: str = "wait_for_file"
+SYNC_TASK_ID: str = "sync"
+DEEP_ARCHIVE_TASK_ID: str = "deep_archive"
 
 # Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
 #
@@ -86,7 +91,8 @@ _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(months=1)
 _DEV_DEST_PATH_ROOT: str = str(Path.home() / "dev" / "tmp") if not os.path.exists('/run/secrets') else "/mnt"
 #
 # Use S3Path, if we ever use this var. For now, but this layer is just passing it on
-_DEV_WEB_DEST: str = "s3://manifest.bdrc.org/Works"
+_DEV_DEEP_ARCHIVE_DEST: str = "s3://manifest.bdrc.org"
+_DEV_WEB_DEST: str = f"{_DEV_DEEP_ARCHIVE_DEST}/Works"
 
 # dev or test invariant
 MY_FEEDER_HOME: Path = Path(_DEV_DEST_PATH_ROOT, "sync-transfer")
@@ -96,7 +102,7 @@ _PROD_DEST_PATH_ROOT: str = _DOCKER_DEST_PATH_ROOT
 #
 # See ~/dev/archive-ops/scripts/syncAnywhere/sample.config
 _PROD_WEB_DEST: str = "s3://archive.tbrc.org/Works"
-
+_PROD_DEEP_ARCHIVE_DEST: str = "s3://glacier.archive.bdrc.org"
 # ------------- CONFIG CONST  ----------------------------
 
 # region ------------   CONST  ----------------------------
@@ -120,6 +126,7 @@ DAG_END_DATETIME = _PROD_DAG_START_DATE.add(weeks=2)
 MY_DB: str = _PROD_DB
 MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
 MY_WEB_DEST: str = _PROD_WEB_DEST
+MY_DEEP_ARCHIVE_DEST: str = _PROD_DEEP_ARCHIVE_DEST
 
 # When debugging in an IDE, always set a breakpoint here,
 # just to ensure you're not running in production
@@ -136,16 +143,18 @@ if is_debug == "YES":
     # OK to leave local - $ARCH_ROOT in the .env makes this safe
     MY_DEST_PATH_ROOT = _DEV_DEST_PATH_ROOT
     MY_WEB_DEST = _DEV_WEB_DEST
+    MY_DEEP_ARCHIVE_DEST: str = _DEV_DEEP_ARCHIVE_DEST
 
 LOG.info(f"{is_debug=}")
 LOG.info(f"{DAG_TIME_DELTA=}")
 LOG.info(f"{DAG_START_DATETIME=}")
 LOG.info(f"{DAG_END_DATETIME=}")
 LOG.info(f"{MY_DB=}")
+# OK to leave MY_DEST_PATH_ROOT  local - $ARCH_ROOT in the .env makes this safe pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
 LOG.info(f"{MY_DEST_PATH_ROOT=}")
 LOG.info(f"{MY_FEEDER_HOME=}")
 LOG.info(f"{MY_WEB_DEST=}")
-# OK to leave local - $ARCH_ROOT in the .env makes this safe pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
+LOG.info(f"{MY_DEEP_ARCHIVE_DEST=}")
 
 # --------------------- /DEV|PROD CONFIG  ---------------
 # --------------- SETUP DAG    ----------------
@@ -189,10 +198,10 @@ PROCESSING_LOW_LIMIT: int = 1
 # Maximum number of files to be in the processing queue
 PROCESSING_HIGH_LIMIT: int = SYNC_DAG_NUMBER_INSTANCES
 
-os.makedirs(READY_PATH, exist_ok=True)
-os.makedirs(DOWNLOAD_PATH, exist_ok=True)
-os.makedirs(STAGING_PATH, exist_ok=True)
-os.makedirs(PROCESSING_PATH, exist_ok=True)
+READY_PATH.mkdir(parents=True, exist_ok=True)
+DOWNLOAD_PATH.mkdir(parents=True, exist_ok=True)
+STAGING_PATH.mkdir(parents=True, exist_ok=True)
+PROCESSING_PATH.mkdir(parents=True, exist_ok=True)
 
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
@@ -246,7 +255,7 @@ def stage_in_task(**context) -> (Path, Path):
     Stages the Wait for file for unzipping
     :param context: airflow task context
     :return: tuple containing the path of the detected file, and the path to the location it is to be moved
-    to for work.
+    to for work. Creates the location it is to be moved to if it does not exist
     """
 
     # sanity check
@@ -292,8 +301,8 @@ def debag(**context) -> [str]:
     so returning strings
     """
 
+    # stage_in_task creates everything it returns
     detected, staging_path = stage_in_task(**context)
-    os.makedirs(staging_path, exist_ok=True)
 
     # Remove any contents of staging_path
     # Debag returns [pathlib.Path] - supports multiple works per bag
@@ -371,12 +380,14 @@ def sync(**context):
     # return 0
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
+    xcom_list:[] = []
 
     downs = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
     # downs could be a list of lists, if a bag or a zip file contained multiple works
     for a_down in iter_or_return(downs):
         # need an extra layer of indirection, for multi-zip or multi-bag-entries
         for down in iter_or_return(a_down):
+            work_rid: str = Path(down).stem
             env, bash_command = sb.build_sync(start_time=local_start, prod_level=MY_DB, src=down,
                                               archive_dest=DEST_PATH, web_dest=MY_WEB_DEST)
             LOG.info(f"syncing {down}")
@@ -387,28 +398,15 @@ def sync(**context):
                 env=env
             ).execute(context)
 
-            db_phase(GlacierSyncOpCodes.SYNCD, Path(down).stem, db_config=MY_DB, user_data={'synced_path': down})
+            db_phase(GlacierSyncOpCodes.SYNCD, work_rid, db_config=MY_DB, user_data={'synced_path': down})
+            # report on each syncd work
+            xcom_list.append((work_rid, down))
 
 
-# GitHub Copilot suggestion to get around "directory not empty" error
-
-def remove_readonly(func, path, _):
-    import stat
-    os.chmod(path, stat.S_IWRITE)
-    func(path)
+    context['ti'].xcom_push(key=SYNC_DATA_KEY, value=xcom_list)
 
 
-def pathable_airflow_run_id(possible: str) -> str:
-    """
-    transforms a run if into a path that can be used in a shell, by removing characters which could be operands
-    :param possible:
-    :return: the predecessor of any "+" in the string
-    """
-    parseable: str =  possible.replace("+", "Z")
-    #
-    # remove the "scheduled__" or "manual__" prefix
-    skip_path= r"^.*__"
-    return re.sub(skip_path, "", parseable)
+
 
 
 @task
@@ -419,6 +417,12 @@ def cleanup(**context):
     # Use the same paths that were input to 'sync'
     # p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=EXTRACTED_CONTEXT_KEY)
     p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
+
+    # aow-36 remove the collected file
+    collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
+    if collected_file:
+        Path(collected_file).unlink(missing_ok=True)
+
 
     # aow-36 remove the collected file
     collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
@@ -436,6 +440,31 @@ def cleanup(**context):
     for r_i_p in r_ip_paths:
         LOG.info(f"removing {str(r_i_p)}")
         shutil.rmtree(r_i_p, onerror=remove_readonly)
+
+
+@task
+def deep_archive(**context):
+    """Deep archive a sync'd work"""
+    from DeepArchiveFacade import setup, do_one, get_dip_id
+
+    # set up deep archive
+    dis: DateTime = context['data_interval_start']
+    da_log_path: str = f"{context['dag'].dag_id}_{dis.in_tz('local').strftime('%Y-%m-%dT%H:%M:%S')}"
+
+    da_log_dir: Path = Path( sb.APP_LOG_ROOT, "deep-archive",  da_log_path)
+    da_log_dir.mkdir(parents=True, exist_ok=True)
+    # Get the sync task's pushed return data
+    syncs:[] = context['ti'].xcom_pull(task_ids=SYNC_TASK_ID, key=SYNC_DATA_KEY)
+
+
+    #
+    # Given the work_rid and the path, get the sync's dip_id
+    for sync_data in syncs:
+        work_rid, down = sync_data
+
+    # set up deep archive args
+        setup(MY_DB, da_log_dir, MY_DEEP_ARCHIVE_DEST, work_rid, Path(down))
+        do_one()
 
 
 
@@ -483,7 +512,7 @@ with DAG('down_scheduled',
         task_id='which_file',
         python_callable=_which_file)
 
-    start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> cleanup()
+    start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> deep_archive() >> cleanup()
 
 with DAG('feeder',
          schedule=timedelta(minutes=100),
@@ -542,8 +571,10 @@ with DAG('feeder',
 
 
 if __name__ == '__main__':
+    pass
     # noinspection PyArgumentList
-    # feeder.test()
 
+
+    # feeder.test()
     get_one.test()
     # gs_dag.cli()
