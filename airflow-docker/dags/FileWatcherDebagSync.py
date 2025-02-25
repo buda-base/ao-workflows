@@ -18,7 +18,6 @@ import fnmatch
 # This is really stupid. SqlAlchemy can't import a pendulum.duration, so I have
 # to drop back to datetime.timedelta
 from datetime import timedelta
-from time import strftime
 from typing import Union, List
 
 import airflow.operators.bash
@@ -80,11 +79,11 @@ _DEV_DB: str = 'qa'
 
 # TODO: Convert to pendulum
 _DEV_TIME_SCHEDULE: timedelta = timedelta(minutes=3)
-_DEV_DAG_START_DATE: DateTime = DateTime(2025, 2, 7, 16, 15)
+_DEV_DAG_START_DATE: DateTime = DateTime(2025, 2, 24, 11, 15)
 _DEV_DAG_END_DATE: DateTime = DateTime(2025, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=30)
-_PROD_DAG_START_DATE: DateTime = DateTime(2025,2, 19, 20,45)
+_PROD_DAG_START_DATE: DateTime = DateTime(2025,2, 24, 10,45)
 _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(months=1)
 
 # Sync parameters
@@ -260,7 +259,7 @@ def stage_in_task(**context) -> (Path, Path):
     """
 
     # sanity check
-    detected: str = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key='collected_file')
+    detected: str = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
     if not detected:
         raise AirflowException("No file detected, but wait_for_file returned true")
 
@@ -419,8 +418,11 @@ def cleanup(**context):
     # p_to_rm: [Path] = context['ti'].xcom_pull(task_ids=DEBAG_TASK_ID, key=EXTRACTED_CONTEXT_KEY)
     p_to_rm = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
 
-    # deduplicate
-    run_id_paths: set = set()
+    # aow-36 remove the collected file
+    collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
+    if collected_file:
+        Path(collected_file).unlink(missing_ok=True)
+
 
     # aow-36 remove the collected file
     collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
@@ -435,7 +437,6 @@ def cleanup(**context):
             # works in this run
             dd = Path(p).parent.parent
             r_ip_paths.add(dd)
-
     for r_i_p in r_ip_paths:
         LOG.info(f"removing {str(r_i_p)}")
         shutil.rmtree(r_i_p, onerror=remove_readonly)
@@ -464,6 +465,7 @@ def deep_archive(**context):
     # set up deep archive args
         setup(MY_DB, da_log_dir, MY_DEEP_ARCHIVE_DEST, work_rid, Path(down))
         do_one()
+
 
 
 # DAG args for all DAGs
@@ -513,7 +515,7 @@ with DAG('down_scheduled',
     start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> deep_archive() >> cleanup()
 
 with DAG('feeder',
-         schedule=timedelta(hours=4),
+         schedule=timedelta(minutes=100),
          start_date=DAG_START_DATETIME,
          end_date=DAG_END_DATETIME,
          default_args=default_args,
@@ -572,7 +574,7 @@ if __name__ == '__main__':
     pass
     # noinspection PyArgumentList
 
-    # feeder.test()
 
+    # feeder.test()
     get_one.test()
     # gs_dag.cli()
