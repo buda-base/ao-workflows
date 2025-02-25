@@ -74,11 +74,11 @@ _DEV_DB: str = 'qa'
 
 # TODO: Convert to pendulum
 _DEV_TIME_SCHEDULE: timedelta = timedelta(minutes=3)
-_DEV_DAG_START_DATE: DateTime = DateTime(2025, 2, 7, 16, 15)
+_DEV_DAG_START_DATE: DateTime = DateTime(2025, 2, 24, 11, 15)
 _DEV_DAG_END_DATE: DateTime = DateTime(2025, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=30)
-_PROD_DAG_START_DATE: DateTime = DateTime(2025,2, 19, 20,45)
+_PROD_DAG_START_DATE: DateTime = DateTime(2025,2, 24, 10,45)
 _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(months=1)
 
 # Sync parameters
@@ -486,7 +486,7 @@ with DAG('down_scheduled',
     start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> cleanup()
 
 with DAG('feeder',
-         schedule=timedelta(hours=4),
+         schedule=timedelta(minutes=100),
          start_date=DAG_START_DATETIME,
          end_date=DAG_END_DATETIME,
          default_args=default_args,
