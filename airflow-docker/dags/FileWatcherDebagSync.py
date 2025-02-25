@@ -377,6 +377,7 @@ def sync(**context):
     # return 0
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
+    xcom_list:[] = []
 
     downs = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
     # downs could be a list of lists, if a bag or a zip file contained multiple works
@@ -395,7 +396,11 @@ def sync(**context):
             ).execute(context)
 
             db_phase(GlacierSyncOpCodes.SYNCD, work_rid, db_config=MY_DB, user_data={'synced_path': down})
-            context['ti'].xcom_push(key=SYNC_DATA_KEY, value=(work_rid, down))
+            # report on each syncd work
+            xcom_list.append((work_rid, down))
+
+
+    context['ti'].xcom_push(key=SYNC_DATA_KEY, value=xcom_list)
 
 
 

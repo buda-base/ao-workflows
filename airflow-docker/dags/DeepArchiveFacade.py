@@ -4,8 +4,9 @@
 from archive_ops.DeepArchiveParser import DeepArchiveArgs
 import archive_ops.DeepArchive as da
 from collections import namedtuple
-import logging
 from pathlib import Path
+from staging_utils import get_db_config
+
 
 
 # write a sqlalchemy command in the context of DrsDbContextBase that gets the results of a SQL text query
@@ -46,7 +47,6 @@ def setup(db_config: str, log_root: str, bucket: str, work_rid: str, src_path: P
     """
     This is needed to simulate the main loop of archive_ops.DeepArchive
     """
-    from staging_utils import get_db_config
 
     global args
     args = DeepArchiveArgs()
@@ -94,5 +94,5 @@ def do_one():
         da.update_log_dip(dip_id, 1, error_string)
 
 if __name__ == "__main__":
-    print(get_dip_id('prod', "W1NLM6833",
+    print(get_dip_id(get_db_config('prod'), "W1NLM6833",
                      "/home/airflow/bdrc/data/work/down_scheduled_2025-02-19T20:45:00/unzip/W1NLM6833"))
