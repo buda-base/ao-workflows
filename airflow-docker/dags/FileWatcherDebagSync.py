@@ -192,7 +192,7 @@ STAGING_PATH = BASE_PATH / "work"
 
 # This constant is both the number of instances of the sync dag, and the number of files that
 # the Feeder dag needs to replenish.
-SYNC_DAG_NUMBER_INSTANCES: int = 3
+SYNC_DAG_NUMBER_INSTANCES: int = 2
 # Number of files that triggers the feeder dag
 PROCESSING_LOW_LIMIT: int = 1
 # Maximum number of files to be in the processing queue
@@ -589,6 +589,6 @@ if __name__ == '__main__':
     # noinspection PyArgumentList
 
 
-    feeder.test()
-    # get_one.test()
+    # feeder.test()
+    get_one.test()
     # gs_dag.cli()
