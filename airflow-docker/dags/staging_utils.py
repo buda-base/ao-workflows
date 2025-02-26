@@ -208,6 +208,7 @@ def db_phase(op_code: str, work_rid: str,  db_config: str, user_data: {} = None)
         elif op_code == GlacierSyncOpCodes.SYNCD:
             gsp.sync_complete_on = op_time
 
+        LOG.info(f"Updating {gsp.object_name} with {op_code} at {op_time}")
         # Concatenate user data to existing
         gsp.update_user_data(op_time.to_rfc3339_string(), user_data)
         sess.commit()

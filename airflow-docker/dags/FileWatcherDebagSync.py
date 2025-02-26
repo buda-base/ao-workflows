@@ -402,7 +402,6 @@ def sync(**context):
             # report on each syncd work
             xcom_list.append((work_rid, down))
 
-
     context['ti'].xcom_push(key=SYNC_DATA_KEY, value=xcom_list)
 
 
