@@ -400,8 +400,13 @@ def sync(**context):
 
             db_phase(GlacierSyncOpCodes.SYNCD, work_rid, db_config=MY_DB, user_data={'synced_path': down})
             # report on each syncd work
+            LOG.info(f"Adding {(work_rid, down)} to xcom_list")
             xcom_list.append((work_rid, down))
 
+    if len(xcom_list) == 0:
+        LOG.warning(f"No xcom coming back")
+    else:
+        LOG.info(f"Pushing {SYNC_TASK_ID=} {SYNC_DATA_KEY=} {xcom_list}")
     context['ti'].xcom_push(key=SYNC_DATA_KEY, value=xcom_list)
 
 
@@ -458,6 +463,10 @@ def deep_archive(**context):
 
     #
     # Given the work_rid and the path, get the sync's dip_id
+    if not syncs:
+        LOG.warning("No syncs found")
+        return
+    
     for sync_data in syncs:
         work_rid, down = sync_data
 
