@@ -5,6 +5,7 @@ Utilities for glacier staging
 import os
 import shutil
 import fcntl
+
 from airflow.sensors.filesystem import FileSensor
 from pathlib import Path
 import configparser
@@ -378,31 +379,52 @@ def iter_or_return(obj):
         yield from obj
 
 
-def atomic_copy(src: Path, dst:Path):
-    """Copies a file, saving the rename until the copy is complete
-    :param src: Source file to copy
+def atomic_copy(targets:[(Path, Path)]):
+    """Copies a set of filessaving the renames until the all the copies is complete
+    :param targets: tuples of source and destination pairsSource file to copy
     :param dst: Destination file to copy to
     """
     import tempfile
+    import sys
     # Create a temporary file in the same directory as the destination
-    dir_name, base_name = os.path.split(dst)
-    with tempfile.NamedTemporaryFile(dir=dir_name, delete=False) as tmp_file:
-        temp_name = tmp_file.name
+    to_rename:[] = []
+    for src, dst in targets:
 
-    try:
-        # Copy the source file to the temporary file
-        LOG.info(f"Copying {src} to {temp_name}")
-        shutil.copyfile(src, temp_name)
-        # Rename the temporary file to the destination file
-        LOG.info(f"Renaming {temp_name} to {dst}")
-        os.rename(temp_name, dst)
-        LOG.info("atomic copy complete")
-    except Exception as e:
-        # Clean up the temporary file in case of an error
-        import sys
-        LOG.exception(f"Error copying {src} to {dst}", exc_info=sys.exc_info())
-        os.remove(temp_name)
-        raise e
+        dir_name, base_name = os.path.split(dst)
+        with tempfile.NamedTemporaryFile(dir=dir_name, delete=False) as tmp_file:
+            temp_name = tmp_file.name
+
+        try:
+            # Copy the source file to the temporary file
+            LOG.info(f"Copying {src} to {temp_name}")
+            shutil.copyfile(src, temp_name)
+            # Rename the temporary file to the destination file
+            LOG.info(f"Renaming {temp_name} to {dst}")
+            to_rename.append((temp_name, dst))
+            LOG.info("atomic copy complete")
+        except Exception as e:
+            # Clean up the temporary file in case of an error
+            LOG.exception(f"Error copying {src} to {dst}", exc_info=sys.exc_info())
+            os.remove(temp_name)
+            raise e
+
+    # Now that all are copied, rename them all
+    rename_exceptions: bool = False
+    for temp_name, dst in to_rename:
+        try:
+            os.rename(temp_name, dst)
+        except Exception as e:
+            rename_exceptions = True
+            LOG.exception(f"Error moving {str(temp_name)} to {str(dst)}", exc_info=sys.exc_info())
+            try:
+                os.remove(temp_name)
+            except Exception as e:
+                LOG.exception(f"Error removing {str(temp_name)}", exc_info=sys.exc_info())
+            # Clean up the temporary file in case of an error
+
+    if rename_exceptions:
+        raise IOError("Error atomic copy renamed files. See log.")
+
 
 
 

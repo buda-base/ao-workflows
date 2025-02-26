@@ -22,7 +22,7 @@
     <option name="REDIRECT_INPUT" value="false" />
     <option name="INPUT_FILE" value="" />
     <method v="2">
-      <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_prep deep archive" />
+      <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_prep feeder" />
     </method>
   </configuration>
 </component>

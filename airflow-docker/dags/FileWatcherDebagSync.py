@@ -547,6 +547,10 @@ with DAG('feeder',
                         if n_to_feed == 0:
                             break
             # _m is str
+            # Collect up the works to move. Moving and renaming them one at a time causes
+            # enormous contention, because, as each one is renamed, it is automatically being unzipped
+            # and syncd. So, collect them all, then move them all.
+            to_copy:[] = []
             if not to_move:
                 LOG.info(f"No  {ZIP_GLOB} in {src_path=}")
             else:
@@ -562,9 +566,11 @@ with DAG('feeder',
                 LOG.info(f"Moving {_m} to {save_f}")
                 shutil.move(_m, save_path)
                 LOG.info(f"Moved.")
-                atomic_copy(save_f, dest_path / _f)
+                to_copy.append((save_f, dest_path / _f))
         else:
             LOG.info("No need to feed")
+
+        atomic_copy(to_copy)
 
 
     feed_files(MY_FEEDER_HOME, RETENTION_PATH,  READY_PATH)
@@ -575,6 +581,6 @@ if __name__ == '__main__':
     # noinspection PyArgumentList
 
 
-    # feeder.test()
-    get_one.test()
+    feeder.test()
+    # get_one.test()
     # gs_dag.cli()
