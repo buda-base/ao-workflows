@@ -14,7 +14,8 @@ x-environment: &airflow_environment
 # jimk ao14 local change
   - TZ=America/New_York
 # jimk aow32 - comment for prod
-#  - PYDEV_DEBUG=YES
+  - PYDEV_DEBUG=YES
+
 
 # See ./Dockerfile-bdrc
 x-airflow-image: &airflow_image bdrc-airflow
