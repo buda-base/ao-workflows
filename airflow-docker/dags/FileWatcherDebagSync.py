@@ -21,7 +21,6 @@ from datetime import timedelta
 from typing import Union, List
 
 import airflow.operators.bash
-from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
 from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowException
@@ -30,7 +29,6 @@ from airflow.operators.python import BranchPythonOperator
 # bag is in pyPI bdrc-bag
 from bag import bag_ops
 from pendulum import DateTime
-from sqlalchemy import text
 
 import SyncOptionBuilder as sb
 from staging_utils import *
@@ -68,6 +66,7 @@ DEBAG_TASK_ID: str = "debag"
 UNZIP_TASK_ID: str = "unzip"
 SYNC_TASK_ID: str = "sync"
 DEEP_ARCHIVE_TASK_ID: str = "deep_archive"
+DOWN_SCHEDULED_DAG_ID = 'down_scheduled'
 
 # Don't modify these unless you need to - see the next section, DEV|PROD CONFIG
 #
@@ -83,7 +82,7 @@ _DEV_DAG_START_DATE: DateTime = DateTime(2025, 2, 24, 11, 15)
 _DEV_DAG_END_DATE: DateTime = DateTime(2025, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=30)
-_PROD_DAG_START_DATE: DateTime = DateTime(2025,2, 24, 10,45)
+_PROD_DAG_START_DATE: DateTime = DateTime(2025, 2, 24, 10, 45)
 _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(months=1)
 
 # Sync parameters
@@ -150,7 +149,8 @@ LOG.info(f"{DAG_TIME_DELTA=}")
 LOG.info(f"{DAG_START_DATETIME=}")
 LOG.info(f"{DAG_END_DATETIME=}")
 LOG.info(f"{MY_DB=}")
-# OK to leave MY_DEST_PATH_ROOT  local - $ARCH_ROOT in the .env makes this safe pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
+# OK to leave MY_DEST_PATH_ROOT  local - $ARCH_ROOT in the .env makes this safe
+# pp(f"{MY_DEST_PATH_ROOT=}")pp(f"{MY_WEB_DEST=}")
 LOG.info(f"{MY_DEST_PATH_ROOT=}")
 LOG.info(f"{MY_FEEDER_HOME=}")
 LOG.info(f"{MY_WEB_DEST=}")
@@ -184,7 +184,7 @@ READY_PATH: Path = WORK_PATH / "ready"
 # wait_for_files task moves files here for them to work on
 PROCESSING_PATH: Path = WORK_PATH / "in_process"
 
-# jimk: changed preservaton task to feeder, which moves and then copies.
+# jimk: changed preservation task to feeder, which moves and then copies.
 # feeder copies them here before destroying the original
 RETENTION_PATH: Path = MY_FEEDER_HOME / "save"
 # debag destination
@@ -192,9 +192,7 @@ STAGING_PATH = BASE_PATH / "work"
 
 # This constant is both the number of instances of the sync dag, and the number of files that
 # the Feeder dag needs to replenish.
-SYNC_DAG_NUMBER_INSTANCES: int = 2
-# Number of files that triggers the feeder dag
-PROCESSING_LOW_LIMIT: int = 1
+SYNC_DAG_NUMBER_INSTANCES: int = 3
 # Maximum number of files to be in the processing queue
 PROCESSING_HIGH_LIMIT: int = SYNC_DAG_NUMBER_INSTANCES
 
@@ -202,7 +200,6 @@ READY_PATH.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_PATH.mkdir(parents=True, exist_ok=True)
 STAGING_PATH.mkdir(parents=True, exist_ok=True)
 PROCESSING_PATH.mkdir(parents=True, exist_ok=True)
-
 
 # This value is a docker Bind Mount to a local dir - see ../airflow-docker/bdrc-docker-compose.yml
 DEST_PATH: Path = Path(MY_DEST_PATH_ROOT, "Archive")
@@ -324,7 +321,6 @@ def debag(**context) -> [str]:
     # Work/Work.bag as a bag, but without any contents in the 'data/'
     # so only copy the manifest and tag files
 
-
     for db_down in debagged_downs:
         work_name: str = Path(db_down).stem
         bag_target: str = f"{work_name}.bag"
@@ -380,7 +376,7 @@ def sync(**context):
     # return 0
     utc_start: DateTime = context['data_interval_start']
     local_start: DateTime = utc_start.in_tz(SYNC_TZ_LABEL)
-    xcom_list:[] = []
+    xcom_list: [] = []
 
     downs = context['ti'].xcom_pull(task_ids=[DEBAG_TASK_ID, UNZIP_TASK_ID], key=EXTRACTED_CONTEXT_KEY)
     # downs could be a list of lists, if a bag or a zip file contained multiple works
@@ -399,7 +395,7 @@ def sync(**context):
             ).execute(context)
 
             db_phase(GlacierSyncOpCodes.SYNCD, work_rid, db_config=MY_DB, user_data={'synced_path': down})
-            # report on each syncd work
+            # report on each sync'd work
             LOG.info(f"Adding {(work_rid, down)} to xcom_list")
             xcom_list.append((work_rid, down))
 
@@ -408,9 +404,9 @@ def sync(**context):
     else:
         LOG.info(f"Pushing {SYNC_TASK_ID=} {SYNC_DATA_KEY=} {xcom_list}")
     context['ti'].xcom_push(key=SYNC_DATA_KEY, value=xcom_list)
-
-
-
+    if os.environ['PYDEV_DEBUG'] == "YES":
+        import time
+        time.sleep(55)
 
 
 @task
@@ -426,7 +422,6 @@ def cleanup(**context):
     collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
     if collected_file:
         Path(collected_file).unlink(missing_ok=True)
-
 
     # aow-36 remove the collected file
     collected_file = context['ti'].xcom_pull(task_ids=WAIT_FOR_FILE_TASK_ID, key=COLLECTED_FILE_KEY)
@@ -449,31 +444,29 @@ def cleanup(**context):
 @task
 def deep_archive(**context):
     """Deep archive a sync'd work"""
-    from DeepArchiveFacade import setup, do_one, get_dip_id
+    from DeepArchiveFacade import setup, do_one
 
     # set up deep archive
     dis: DateTime = context['data_interval_start']
     da_log_path: str = f"{context['dag'].dag_id}_{dis.in_tz('local').strftime('%Y-%m-%dT%H:%M:%S')}"
 
-    da_log_dir: Path = Path( sb.APP_LOG_ROOT, "deep-archive",  da_log_path)
+    da_log_dir: Path = Path(sb.APP_LOG_ROOT, "deep-archive", da_log_path)
     da_log_dir.mkdir(parents=True, exist_ok=True)
     # Get the sync task's pushed return data
-    syncs:[] = context['ti'].xcom_pull(task_ids=SYNC_TASK_ID, key=SYNC_DATA_KEY)
-
+    syncs: [] = context['ti'].xcom_pull(task_ids=SYNC_TASK_ID, key=SYNC_DATA_KEY)
 
     #
     # Given the work_rid and the path, get the sync's dip_id
     if not syncs:
         LOG.warning("No syncs found")
         return
-    
+
     for sync_data in syncs:
         work_rid, down = sync_data
 
-    # set up deep archive args
+        # set up deep archive args
         setup(MY_DB, da_log_dir, MY_DEEP_ARCHIVE_DEST, work_rid, Path(down))
         do_one()
-
 
 
 # DAG args for all DAGs
@@ -491,7 +484,7 @@ default_args = {
     'catchup': False
 }
 
-with DAG('down_scheduled',
+with DAG(DOWN_SCHEDULED_DAG_ID,
          # These are for rapid file testing
          schedule=timedelta(minutes=10),
          start_date=DAG_START_DATETIME,
@@ -531,63 +524,74 @@ with DAG('feeder',
     @task
     def feed_files(src_path: Path, save_path: Path, dest_path: Path):
         """
-        Replenishes the ready directory
+        Replenishes the ready directory when it is empty, and no other work is being done
         :return:
         """
 
-        in_process_queue_bag_count: int = 0
+        ready_empty: bool = True
         with os.scandir(dest_path) as _process:
             for _p in _process:
                 if _p.is_file() and fnmatch.fnmatch(_p.name, ZIP_GLOB):
-                    in_process_queue_bag_count += 1
+                    ready_empty = False
+                    break
 
-        LOG.info(f"Looking for {ZIP_GLOB} in {dest_path=} found {in_process_queue_bag_count=} {PROCESSING_LOW_LIMIT=} "
-                 f"PROCESSING_HIGH_LIMIT={PROCESSING_HIGH_LIMIT}")
-        if in_process_queue_bag_count < PROCESSING_LOW_LIMIT:
-            n_to_feed: int = PROCESSING_HIGH_LIMIT - in_process_queue_bag_count
-            to_move: [] = []
-            LOG.info(f"Looking for {ZIP_GLOB} in {src_path=}")
-            with os.scandir(src_path) as _dir:
-                for _d in _dir:
-                    if _d.is_file() and fnmatch.fnmatch(_d.name, ZIP_GLOB):
-                        to_move.append(_d.path)
-                        n_to_feed -= 1
-                        if n_to_feed == 0:
-                            break
-            # _m is str
-            # Collect up the works to move. Moving and renaming them one at a time causes
-            # enormous contention, because, as each one is renamed, it is automatically being unzipped
-            # and syncd. So, collect them all, then move them all.
-            to_copy:[] = []
-            if not to_move:
-                LOG.info(f"No  {ZIP_GLOB} in {src_path=}")
-            else:
-                save_path.mkdir( parents=True, exist_ok=True)
-            for _m in to_move:
-                _f = Path(_m).name
-                save_f: Path = save_path / _f
-                LOG.info(f"Moving {_m} to {save_f}")
-                # if save_path exists, remove it
-                if save_f.exists():
-                    LOG.warning(f"existing sync transfer being removed: {save_f}")
-                    save_f.unlink()
-                LOG.info(f"Moving {_m} to {save_f}")
-                shutil.move(_m, save_path)
-                LOG.info(f"Moved.")
-                to_copy.append((save_f, dest_path / _f))
-        else:
+        LOG.info(f"Looking for {ZIP_GLOB} in {dest_path=} Find any? {ready_empty=}")
+        if not ready_empty:
             LOG.info("No need to feed")
+            return
+
+        # Look for tasks in the down_scheduled dag
+        running_tasks = get_running_task_instances(DOWN_SCHEDULED_DAG_ID)
+        # check if all the returned tasks task.id member is 'wait_for_file'
+        _all = all([sync_task.task_id == WAIT_FOR_FILE_TASK_ID for sync_task in running_tasks])
+        # for sync_task in running_tasks:
+        #     LOG.info(f"Task {sync_task.task_id} is running in DAG {DOWN_SCHEDULED_DAG_ID}")
+        if not _all:
+            LOG.info("Not all tasks are wait_for_file. rescheduling")
+            return
+
+        # We don't need any special locking. This is the only process that populates ready, so if we got here, there
+        # we can go ahead and feed the ready directory
+        n_to_feed: int = PROCESSING_HIGH_LIMIT
+        to_move: [] = []
+        LOG.info(f"Looking for {ZIP_GLOB} in {src_path=}")
+        with os.scandir(src_path) as _dir:
+            for _d in _dir:
+                if _d.is_file() and fnmatch.fnmatch(_d.name, ZIP_GLOB):
+                    to_move.append(_d.path)
+                    n_to_feed -= 1
+                    if n_to_feed == 0:
+                        break
+        # _m is str
+        # Collect up the works to move. Moving and renaming them one at a time causes
+        # enormous contention, because, as each one is renamed, it is automatically being unzipped
+        # and sync'd. So, collect them all, then move them all.
+        to_copy: [] = []
+        if not to_move:
+            LOG.info(f"No  {ZIP_GLOB} in {src_path=}")
+        else:
+            save_path.mkdir(parents=True, exist_ok=True)
+        for _m in to_move:
+            _f = Path(_m).name
+            save_f: Path = save_path / _f
+            LOG.info(f"Moving {_m} to {save_f}")
+            # if save_path exists, remove it
+            if save_f.exists():
+                LOG.warning(f"existing sync transfer being removed: {save_f}")
+                save_f.unlink()
+            LOG.info(f"Moving {_m} to {save_f}")
+            shutil.move(_m, save_path)
+            LOG.info(f"Moved.")
+            to_copy.append((save_f, dest_path / _f))
 
         atomic_copy(to_copy)
 
 
-    feed_files(MY_FEEDER_HOME, RETENTION_PATH,  READY_PATH)
-
+    feed_files(MY_FEEDER_HOME, RETENTION_PATH, READY_PATH)
 
 if __name__ == '__main__':
     pass
     # noinspection PyArgumentList
-
 
     # feeder.test()
     get_one.test()
