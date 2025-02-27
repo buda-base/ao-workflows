@@ -404,9 +404,6 @@ def sync(**context):
     else:
         LOG.info(f"Pushing {SYNC_TASK_ID=} {SYNC_DATA_KEY=} {xcom_list}")
     context['ti'].xcom_push(key=SYNC_DATA_KEY, value=xcom_list)
-    if os.environ['PYDEV_DEBUG'] == "YES":
-        import time
-        time.sleep(55)
 
 
 @task
