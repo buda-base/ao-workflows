@@ -38,13 +38,13 @@ class CollectingSingleFileSensor(FileSensor):
     def acquire_lock(self):
         lock_file = open(LOCK_FILE, 'w')
         fcntl.flock(lock_file, fcntl.LOCK_EX)
-        LOG.info(f"got lock on {LOCK_FILE=}")
+        LOG.debug(f"got lock on {LOCK_FILE=}")
         return lock_file
 
     def release_lock(self, lock_file):
         fcntl.flock(lock_file, fcntl.LOCK_UN)
         lock_file.close()
-        LOG.info(f"released lock on {LOCK_FILE=}")
+        LOG.debug(f"released lock on {LOCK_FILE=}")
 
     def __init__(self, processing_path: Path, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -447,6 +447,32 @@ def pathable_airflow_run_id(possible: str) -> str:
     # remove the "scheduled__" or "manual__" prefix
     skip_path= r"^.*__"
     return re.sub(skip_path, "", parseable)
+
+from airflow.models import TaskInstance
+from airflow.utils.state import State
+from airflow import settings
+from sqlalchemy.orm import sessionmaker
+
+def get_running_task_instances(dag_id):
+    """
+    Get running task instances for a specific DAG.
+    :param dag_id: The ID of the DAG.
+    :return: List of running task instances.
+    """
+    # Create a session
+    Session = sessionmaker(bind=settings.engine)
+    session = Session()
+
+    try:
+        # Query running task instances
+        running_tasks = session.query(TaskInstance).filter(
+            TaskInstance.dag_id == dag_id,
+            TaskInstance.state == State.RUNNING
+        ).all()
+
+        return running_tasks
+    finally:
+        session.close()
 
 # DEBUG: Local
 if __name__ == '__main__':
