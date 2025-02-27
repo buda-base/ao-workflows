@@ -56,6 +56,7 @@ def setup(db_config: str, log_root: str, bucket: str, work_rid: str, src_path: P
     args.complete = False
     args.bucket = bucket
     args.log_root = log_root
+    args.in_daemon = True
     #
     # Given the work_rid and the path, get the sync's dip_id
     global record
@@ -77,9 +78,9 @@ def do_one():
 
         if args.complete:
             image_group_list = da.get_igs_for_invert(record.WorkName)
-            da.do_deep_archive_complete(record.WorkName, Path(record.path), image_group_list, args.bucket)
+            da.do_deep_archive_complete(record.WorkName, Path(record.path), image_group_list, args.bucket, args.in_daemon)
         else:  # args.incremental
-            da.do_deep_archive_incremental(record.WorkName, Path(record.path), inventory_path, args.bucket)
+            da.do_deep_archive_incremental(record.WorkName, Path(record.path), inventory_path, args.bucket, args.in_daemon)
             # image_group_list = get_igs_for_invert(record.WorkName, record.path, record.dip_external_id)
 
         # if there was a comment, we're only doing the image groups that were designated in the comment.
@@ -92,6 +93,7 @@ def do_one():
         error_string: str = f"Failed to process {record=} {dip_id=} Exception {e=}"
         da._log.error(error_string)
         da.update_log_dip(dip_id, 1, error_string)
+        raise e
 
 if __name__ == "__main__":
     print(get_dip_id(get_db_config('prod'), "W1NLM6833",
