@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """This is needed to simulate the main loop of archive_ops.DeepArchive
 """
+import os
+
 from archive_ops.DeepArchiveParser import DeepArchiveArgs
 import archive_ops.DeepArchive as da
 from collections import namedtuple
 from pathlib import Path
-from staging_utils import get_db_config
+import staging_utils as u
 
-
+# You need to provide this to the DeepArchive library, rather than having it decide where to look for
+# its credentials.
+AWS_RS=str(Path(u.RUN_SECRETS,"aws"))
+if os.path.exists(AWS_RS):
+    os.environ['AWS_SHARED_CREDENTIALS_FILE'] = AWS_RS
 
 # write a sqlalchemy command in the context of DrsDbContextBase that gets the results of a SQL text query
 def get_dip_id(db_config: str, work_rid: str, src_folder: str):
@@ -16,7 +22,7 @@ def get_dip_id(db_config: str, work_rid: str, src_folder: str):
     :param db_config: full db config in the form db_handle:/path/to/config
     :param work_rid:
     :param src_folder: the source folder for the sync we are trying to deep archive. the actual destination
-    is what get's deep archived, as the source is not assumed to exist on the calling machine
+    is what gets deep archived, as the source is not assumed to exist on the calling machine
     :return:
     """
     from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
@@ -51,7 +57,7 @@ def setup(db_config: str, log_root: str, bucket: str, work_rid: str, src_path: P
     global args
     args = DeepArchiveArgs()
     args.log_level = "info"
-    args.drsDbConfig = get_db_config(db_config)
+    args.drsDbConfig = u.get_db_config(db_config)
     args.incremental = True
     args.complete = False
     args.bucket = bucket
@@ -96,5 +102,5 @@ def do_one():
         raise e
 
 if __name__ == "__main__":
-    print(get_dip_id(get_db_config('prod'), "W1NLM6833",
+    print(get_dip_id(u.get_db_config('prod'), "W1NLM6833",
                      "/home/airflow/bdrc/data/work/down_scheduled_2025-02-19T20:45:00/unzip/W1NLM6833"))
