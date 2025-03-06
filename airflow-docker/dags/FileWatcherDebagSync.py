@@ -192,7 +192,7 @@ STAGING_PATH = BASE_PATH / "work"
 
 # This constant is both the number of instances of the sync dag, and the number of files that
 # the Feeder dag needs to replenish.
-SYNC_DAG_NUMBER_INSTANCES: int = 3
+SYNC_DAG_NUMBER_INSTANCES: int = 2
 # Maximum number of files to be in the processing queue
 PROCESSING_HIGH_LIMIT: int = SYNC_DAG_NUMBER_INSTANCES
 
