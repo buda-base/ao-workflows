@@ -513,7 +513,7 @@ with DAG(DOWN_SCHEDULED_DAG_ID,
     start >> wait_for_file >> which_file >> [debag(), unzip()] >> sync() >> deep_archive() >> cleanup()
 
 with DAG('feeder',
-         schedule=timedelta(minutes=100),
+         schedule=timedelta(minutes=30),
          start_date=DAG_START_DATETIME,
          end_date=DAG_END_DATETIME,
          default_args=default_args,
