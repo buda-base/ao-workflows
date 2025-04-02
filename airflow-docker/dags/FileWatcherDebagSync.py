@@ -82,7 +82,7 @@ _DEV_DAG_START_DATE: DateTime = DateTime(2025, 2, 24, 11, 15)
 _DEV_DAG_END_DATE: DateTime = DateTime(2025, 12, 8, hour=23)
 
 _PROD_TIME_SCHEDULE: timedelta = timedelta(minutes=30)
-_PROD_DAG_START_DATE: DateTime = DateTime(2025, 3,11, 10, 45)
+_PROD_DAG_START_DATE: DateTime = DateTime(2025, 3,31, 10, 45)
 _PROD_DAG_END_DATE: DateTime = _PROD_DAG_START_DATE.add(months=1)
 
 # Sync parameters
@@ -121,7 +121,7 @@ LOG = logging.getLogger("airflow.task")
 # See the dev section below
 DAG_TIME_DELTA: timedelta = _PROD_TIME_SCHEDULE
 DAG_START_DATETIME: DateTime = _PROD_DAG_START_DATE
-DAG_END_DATETIME: DateTime = _PROD_DAG_START_DATE.add(weeks=2)
+DAG_END_DATETIME: DateTime = _PROD_DAG_END_DATE
 MY_DB: str = _PROD_DB
 MY_DEST_PATH_ROOT: str = _PROD_DEST_PATH_ROOT
 MY_WEB_DEST: str = _PROD_WEB_DEST
