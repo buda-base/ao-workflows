@@ -134,3 +134,15 @@ dmypy.json
 **/.secrets/**
 airflow-docker/bin/
 .secrets/
+.DS_Store
+issues_gb.csv
+.idea/.name
+.idea/ao-workflows.iml
+.idea/csv-editor.xml
+.idea/csv-plugin.xml
+.idea/deployment.xml
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/runConfigurations/FileWatcherDebagSync.xml
+.idea/runConfigurations/FileWatcherDebagSync.xml
