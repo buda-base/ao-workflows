@@ -3,7 +3,7 @@ apache-airflow~=2.8.3
 apache-airflow-providers-amazon
 internetarchive~=3.0.2
 packaging
--r airflow-docker/StagingGlacierProcess-requirements.txt
+
 #
 # Severe warning alert.
 # conda install -c conda-forge mysql
@@ -19,7 +19,7 @@ packaging
 # Fail 10176  ~/dev/ao-workflows/tests/one_run.cmdline
 # 10177  conda remove pymysql
 # 10178  conda install -c conda-forge mysqlclient
-# Fail, cant find 'MySqlDb' 10179  ~/dev/ao-workflows/tests/one_run.cmdline
+# Fail, cant find 'MySqlDb' 10179  ~/dev/ao-workflows-r airflow-docker/StagingGlacierProcess-requirements/tests/one_run.cmdline
 # 10180  conda install -c conda-forge pymysql
 # Works 10181  ~/dev/ao-workflows/tests/one_run.cmdline
 # conda remove mysql  # who wants the server?
