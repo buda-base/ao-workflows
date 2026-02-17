@@ -1,83 +1,144 @@
 from enum import Enum
 import sys
+import os
+import csv
+import tempfile
+import shutil
+from pathlib import Path
+import requests
+import zipfile
+import logging
+from pendulum import datetime
+from internetarchive import upload, search_items
 
-from pendulum import datetime # for defining the policy enum
-# Define an Enum for upload policies
+# Airflow logger
+af_log = logging.getLogger("airflow.task")
+
 class UploadIAPolicy(Enum):
-    OK = "OKGo"
-    SIZE_NO = "size"
-    IMAGES_ONLY = "images_only"
+  OK = "OKGo"
+  SIZE_NO = "size"
+  IMAGES_ONLY = "images_only"
+  POLICY = "policy"
 
+MAX_DISK_GB = 800
+ZIP_EXCLUDE_IMG_JSON = ["./images/*/*.json", "./images/*/*.JSON"]
 
-"""
-Translate this into python
-#!/usr/bin/env bash
-# 
-#
-# Reads a file that the get_works_for_activity -a IA prepares
+def get_directory_size(path_to_work: Path) -> int:
+  return sum(f.stat().st_size for f in path_to_work.rglob('*') if f.is_file())
 
+def get_upload_policy(rid: str, rid_path: Path) -> UploadIAPolicy:
+  can_ia_query = f"https://ldspdi.bdrc.io/query/ask/AO_should_upload_to_IA?R_RES=bdr:{rid}"
+  try:
+    resp = requests.get(can_ia_query, timeout=10)
+    goes_to_ia = resp.text.strip().lower() != "false"
+  except Exception as e:
+    af_log.error(f"Policy check failed for {rid}: {e}")
+    return UploadIAPolicy.POLICY
+  if not goes_to_ia:
+    return UploadIAPolicy.POLICY
+  size_gb = get_directory_size(rid_path) / (1024 ** 3)
+  if size_gb > MAX_DISK_GB:
+    images_gb = get_directory_size(rid_path / 'images') / (1024 ** 3)
+    if images_gb > MAX_DISK_GB:
+      return UploadIAPolicy.SIZE_NO
+    else:
+      return UploadIAPolicy.IMAGES_ONLY
+  return UploadIAPolicy.OK
 
-# Example usage in should_upload_to_ia function:
-# def should_upload_to_ia(policy: UploadIAPolicy, ...):
-#     if policy == UploadIAPolicy.ALWAYS:
-#         return True
-#     elif policy == UploadIAPolicy.NEVER:
-#         return False
-#     elif policy == UploadIAPolicy.CONDITIONAL:
-#         # custom logic
-#         pass
-# This script expects that the file is a csv that contains
-#.... 0 - 1 headers
-#.... 1+ lines containing two csv fields:  WorkName, Workpath
+def zip_work(rid: str, src_path: Path, zip_path: Path, images_only: bool = False, exclude_img_json=None):
+  """
+  Zips the work at src_path into zip_path.
+  If images_only is True, only zips the images/ subfolder (excluding JSONs).
+  Otherwise, zips images/ first, then all other subfolders except meta/.
+  """
+  exclude_img_json = exclude_img_json or []
+  with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    # Add images/ first
+    images_dir = src_path / 'images'
+    if images_dir.exists():
+      for root, dirs, files in os.walk(images_dir):
+        for file in files:
+          file_path = Path(root) / file
+          rel_path = file_path.relative_to(src_path)
+          # Exclude JSON files in images
+          if any(file_path.match(pattern) for pattern in exclude_img_json):
+            continue
+          zf.write(file_path, rel_path)
+    if not images_only:
+      # Add all other subfolders except meta/ and images/
+      for item in src_path.iterdir():
+        if item.name in ('images', 'meta'):
+          continue
+        if item.is_dir():
+          for root, dirs, files in os.walk(item):
+            for file in files:
+              file_path = Path(root) / file
+              rel_path = file_path.relative_to(src_path)
+              zf.write(file_path, rel_path)
+        elif item.is_file():
+          rel_path = item.relative_to(src_path)
+          zf.write(item, rel_path)
 
-# shellcheck disable=SC2034
-ME=$(basename "$(readlink -f $0)")
-set -e
-. ~/bin/init_sys.sh
+def populate_meta(rid: str, meta_dir: Path):
+  """
+  Populates the meta directory for the work using a remote metadata service (curl equivalent).
+  """
+  meta_dir.mkdir(parents=True, exist_ok=True)
+  # Example: download metadata file (replace with actual endpoint and logic)
+  meta_url = f"https://ldspdi.bdrc.io/works/meta/{rid}"
+  meta_file = meta_dir / f"{rid}_meta.json"
+  try:
+    resp = requests.get(meta_url, timeout=10)
+    resp.raise_for_status()
+    with open(meta_file, 'wb') as f:
+      f.write(resp.content)
+    af_log.info(f"Downloaded metadata for {rid} to {meta_file}")
+  except Exception as e:
+    af_log.error(f"Failed to download metadata for {rid}: {e}")
 
-# dip variables
-# this is IA status check
-# if you want this script to check whether or not something is in IA and not upload if it is, set it to 1
-# if you want it to send everything to IA and update what is there, leave it empty
-#
-NO_UPLOAD_IF_EXISTS=
-# dest_path="ia://"
+def upload_to_ia(rid: str, zip_path: Path):
+  ia_id = f"bdrc-{rid}"
+  af_log.info(f"Uploading {zip_path} to Internet Archive as {ia_id}")
+  r = upload(ia_id, [str(zip_path)], metadata={"mediatype": "texts"}, retries=3, verbose=True, delete=True, checksum=True, quiet=True)
+  for result in r:
+    if result.status_code == 200:
+      af_log.info(f"Upload successful for {ia_id}")
+    else:
+      af_log.error(f"Upload failed for {ia_id}: {result.status_code} {result.message}")
 
-#csv input file
-in_file=${1:-/dev/stdin}
-# jimk lib-issues-472: using just the work name, and will use
-# the standalone depositIa.sh, which maintains its own archive path.
-# This means that GetReadyFor IA is going to have to use a different output, not the
-# single archive
+def process_work(rid: str, src_path: Path):
+  policy = get_upload_policy(rid, src_path)
+  if policy == UploadIAPolicy.POLICY:
+    af_log.info(f"Work {rid} does not meet IA upload policy. Skipping upload.")
+    return
+  if policy == UploadIAPolicy.SIZE_NO:
+    af_log.info(f"Work {rid} is over {MAX_DISK_GB} GB, cannot be uploaded to IA.")
+    return
+  images_only = (policy == UploadIAPolicy.IMAGES_ONLY)
+  with tempfile.TemporaryDirectory() as tmpdir:
+    arch_home = Path(tmpdir)
+    meta_dir = arch_home / 'meta'
+    populate_meta(rid, meta_dir)
+    zip_path = arch_home / f"bdrc-{rid}_bdrc.zip"
+    zip_work(rid, src_path, zip_path, images_only=images_only, exclude_img_json=ZIP_EXCLUDE_IMG_JSON)
+    upload_to_ia(rid, zip_path)
 
-# Std header from get_works_for_activity
-header=(WorkName path)
-# csv reading loop
+def main(csv_file: str):
+  with open(csv_file, newline='') as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+      rid = row['WorkName']
+      src_path = Path(row['path'])
+      if not src_path.exists():
+        af_log.error(f"Source path {src_path} not found for {rid}")
+        continue
+      process_work(rid, src_path)
 
-while IFS=, read -ra arc_line; do
-
-    # If the stop file exists (see ../dip-pump/MainPump.sh) then stop processing
-    # set by MainPump.sh to indicate user termination
-    if [[ -f $STOP_FLAG_FILE ]] ; then
-	log_echo Stop file found $(ls -l $STOP_FLAG_FILE) breaking loop
-	break
-    fi
-
-    # Debug
-    #proof_of_life
-    # continue
-
-    #skip header
-    if [[ ${arc_line[0]} == "${header[0]}" && ${arc_line[1]} == "${header[1]}" ]]; then
-      continue
-    fi
-
-    #reading csv
-    rid=${arc_line[0]}
-
-    # jimk: Now that we're not using single archive as source for IA,
-    # just use the archive source path. IA builds in a temp folder
-    srcPath=${arc_line[1]}  
+if __name__ == "__main__":
+  if len(sys.argv) < 2:
+    print("Usage: python DIP_pump_depositIA.py <input_csv>")
+    sys.exit(1)
+  main(sys.argv[1])
     #check to see if item is allowed to circulate in IA
     # dont even bother to build the IA zip if it can't go in IA.
     # Make a log, mark it done, move on.
@@ -87,34 +148,33 @@ while IFS=, read -ra arc_line; do
 –
    #this is a little noisy. -s and stderr redirect.
   # map any variant of "false" to empty, for future parsing if needed.
-  goes_to_ia=$(curl -s "${can_ia_query}" 2> /dev/null | sed -e 's/^.*false.*$//I')
+  # goes_to_ia=$(curl -s "${can_ia_query}" 2> /dev/null | sed -e 's/^.*false.*$//I')
 
   # goes_to_ia is now not false, or empty [[ -z ... ]] would be true
   # This means we can upload
-  if [[ -n $goes_to_ia  ]]; then
+#   if [[ -n $goes_to_ia  ]]; then
 
-    # This tells us if we have to force the upload
-    # no to not uploading means force uploading
-    if [[ -z $NO_UPLOAD_IF_EXISTS ]]; then
-      deposit_ia_flag=-f
-    fi
-    depositIa.sh "${deposit_ia_flag}" "$srcPath"
-    # proof_of_life here to test signal handling
+#     # This tells us if we have to force the upload
+#     # no to not uploading means force uploading
+#     if [[ -z $NO_UPLOAD_IF_EXISTS ]]; then
+#       deposit_ia_flag=-f
+#     fi
+#     depositIa.sh "${deposit_ia_flag}" "$srcPath"
+#     # proof_of_life here to test signal handling
 
-  else
-    # jimk lib-issues 472 - we're taking IA out of the pipeline. There are no downstream
-      # dependencies, so a work that cannot be uploaded will have a placeholder IA record.
-      # register occurrence, but with a failure code
-      # Uhh, that had the problem of not having these records pass
-      # through single_archive_removed step, which requires an
-      # upload to IA. So make the failure code a success code, and add a note.
+#   else
+#     # jimk lib-issues 472 - we're taking IA out of the pipeline. There are no downstream
+#       # dependencies, so a work that cannot be uploaded will have a placeholder IA record.
+#       # register occurrence, but with a failure code
+#       # Uhh, that had the problem of not having these records pass
+#       # through single_archive_removed step, which requires an
+#       # upload to IA. So make the failure code a success code, and add a note.
       
-    log_dip_id=$(log_dip -b "$(log_dip_date)" -e "$(log_dip_date)" -r "0" -a "IA" -w "${rid}" -c "Policy not allowed.")
-    log_echo "Policy disallows update record id: ${log_dip_id}"
-  fi
-done <"${in_file}"
+#     log_dip_id=$(log_dip -b "$(log_dip_date)" -e "$(log_dip_date)" -r "0" -a "IA" -w "${rid}" -c "Policy not allowed.")
+#     log_echo "Policy disallows update record id: ${log_dip_id}"
+#   fi
+# done <"${in_file}"
 
-"""
 # determine if a rid should be upploaded to IA
 from asyncio import subprocess
 from pathlib import Path
@@ -133,7 +193,6 @@ def get_directory_size(path_to_work: Path) -> int:
     return sum(f.stat().st_size for f in path_to_work.rglob('*') if f.is_file())
 
 def get_upload_policy(rid: str, rid_path: Path) -> UploadIAPolicy:
-    
     """
     Returns the UploadIAPolicy corresponding the to the work:
      UploadIAPolicy.OK if the work with the given rid:
