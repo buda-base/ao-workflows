@@ -19,7 +19,8 @@ class UploadIAPolicy(Enum):
   SIZE_NO = "size"
   IMAGES_ONLY = "images_only"
   POLICY = "policy"
-
+  POLICY_UNKNOWN = "policy_unknown" # for failures in the policy check, 
+  
 MAX_DISK_GB = 800
 ZIP_EXCLUDE_IMG_JSON = ["./images/*/*.json", "./images/*/*.JSON"]
 
@@ -33,7 +34,7 @@ def get_upload_policy(rid: str, rid_path: Path) -> UploadIAPolicy:
     goes_to_ia = resp.text.strip().lower() != "false"
   except Exception as e:
     af_log.error(f"Policy check failed for {rid}: {e}")
-    return UploadIAPolicy.POLICY
+    return UploadIAPolicy.POLICY_UNKNOWN
   if not goes_to_ia:
     return UploadIAPolicy.POLICY
   size_gb = get_directory_size(rid_path) / (1024 ** 3)
@@ -45,7 +46,7 @@ def get_upload_policy(rid: str, rid_path: Path) -> UploadIAPolicy:
       return UploadIAPolicy.IMAGES_ONLY
   return UploadIAPolicy.OK
 
-def zip_work(rid: str, src_path: Path, zip_path: Path, images_only: bool = False, exclude_img_json=None):
+def zip_work( src_path: Path, zip_path: Path, images_only: bool = False, exclude_img_json=None):
   """
   Zips the work at src_path into zip_path.
   If images_only is True, only zips the images/ subfolder (excluding JSONs).
@@ -84,7 +85,7 @@ def populate_meta(rid: str, meta_dir: Path):
   Populates the meta directory for the work using a remote metadata service (curl equivalent).
   """
   meta_dir.mkdir(parents=True, exist_ok=True)
-  # Example: download metadata file (replace with actual endpoint and logic)
+  # TODO: Example: download metadata file (replace with actual endpoint and logic)
   meta_url = f"https://ldspdi.bdrc.io/works/meta/{rid}"
   meta_file = meta_dir / f"{rid}_meta.json"
   try:
@@ -96,6 +97,7 @@ def populate_meta(rid: str, meta_dir: Path):
   except Exception as e:
     af_log.error(f"Failed to download metadata for {rid}: {e}")
 
+# TODO: return status code for DipLog  
 def upload_to_ia(rid: str, zip_path: Path):
   ia_id = f"bdrc-{rid}"
   af_log.info(f"Uploading {zip_path} to Internet Archive as {ia_id}")
@@ -109,10 +111,12 @@ def upload_to_ia(rid: str, zip_path: Path):
 def process_work(rid: str, src_path: Path):
   policy = get_upload_policy(rid, src_path)
   if policy == UploadIAPolicy.POLICY:
+    # TODO: DipLog this outcome with a success code, to prevent retry, and a dip_comment citing policy failure.
     af_log.info(f"Work {rid} does not meet IA upload policy. Skipping upload.")
     return
   if policy == UploadIAPolicy.SIZE_NO:
     af_log.info(f"Work {rid} is over {MAX_DISK_GB} GB, cannot be uploaded to IA.")
+    # TODO: DipLog this outcome with a success code, to prevent retry, dip_comment citing size limit
     return
   images_only = (policy == UploadIAPolicy.IMAGES_ONLY)
   with tempfile.TemporaryDirectory() as tmpdir:
@@ -120,7 +124,7 @@ def process_work(rid: str, src_path: Path):
     meta_dir = arch_home / 'meta'
     populate_meta(rid, meta_dir)
     zip_path = arch_home / f"bdrc-{rid}_bdrc.zip"
-    zip_work(rid, src_path, zip_path, images_only=images_only, exclude_img_json=ZIP_EXCLUDE_IMG_JSON)
+    zip_work(src_path, zip_path, images_only=images_only, exclude_img_json=ZIP_EXCLUDE_IMG_JSON)
     upload_to_ia(rid, zip_path)
 
 def main(csv_file: str):
@@ -192,6 +196,7 @@ af_log = logging.getLogger("airflow.task")
 def get_directory_size(path_to_work: Path) -> int:
     return sum(f.stat().st_size for f in path_to_work.rglob('*') if f.is_file())
 
+# TODO: Compare with Copilot get_upload_policy 
 def get_upload_policy(rid: str, rid_path: Path) -> UploadIAPolicy:
     """
     Returns the UploadIAPolicy corresponding the to the work:
