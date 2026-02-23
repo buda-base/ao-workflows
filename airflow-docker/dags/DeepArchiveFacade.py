@@ -47,7 +47,7 @@ def get_dip_id(db_config: str, work_rid: str, src_folder: str):
 
 args: DeepArchiveArgs = None
 record_t: namedtuple = namedtuple('record', ['dip_external_id', 'WorkName', 'path'])
-record: record_t = None
+record: any = None
 
 def setup(db_config: str, log_root: str, bucket: str, work_rid: str, src_path: Path):
     """

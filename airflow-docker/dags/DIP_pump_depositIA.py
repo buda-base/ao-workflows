@@ -109,6 +109,15 @@ def upload_to_ia(rid: str, zip_path: Path):
       af_log.error(f"Upload failed for {ia_id}: {result.status_code} {result.message}")
 
 def process_work(rid: str, src_path: Path):
+  """
+  Processes a single work: 
+  checks IA upload policy, 
+  prepares zip, and uploads if allowed.
+  args:   
+    rid: the record ID of the work
+    src_path: the path to the work's files on disk
+    returns: None, but logs outcomes and uploads to IA if policy allows
+  """
   policy = get_upload_policy(rid, src_path)
   if policy == UploadIAPolicy.POLICY:
     # TODO: DipLog this outcome with a success code, to prevent retry, and a dip_comment citing policy failure.
@@ -138,7 +147,7 @@ def main(csv_file: str):
         continue
       process_work(rid, src_path)
 
-if __name__ == "__main__":
+if __name__ == "XX__main__":
   if len(sys.argv) < 2:
     print("Usage: python DIP_pump_depositIA.py <input_csv>")
     sys.exit(1)
@@ -148,8 +157,8 @@ if __name__ == "__main__":
     # Make a log, mark it done, move on.
     # W19992 tests this
 
-  can_ia_query=$(printf "https://ldspdi.bdrc.io/query/ask/AO_should_upload_to_IA?R_RES=bdr:%s" ${rid})
-–
+  # can_ia_query=$(printf "https://ldspdi.bdrc.io/query/ask/AO_should_upload_to_IA?R_RES=bdr:%s" ${rid})
+
    #this is a little noisy. -s and stderr redirect.
   # map any variant of "false" to empty, for future parsing if needed.
   # goes_to_ia=$(curl -s "${can_ia_query}" 2> /dev/null | sed -e 's/^.*false.*$//I')

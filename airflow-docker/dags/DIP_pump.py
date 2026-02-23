@@ -7,6 +7,7 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from datetime import datetime
 from BdrcDbLib.DbOrm.DrsContextBase import DrsDbContextBase
 from pprint import pprint as pp
+from DIP_pump_depositIA import process_work
 
 from staging_utils import get_db_config
 def process_results(**context):
@@ -48,7 +49,7 @@ with DAG(
     def do_one_deep_archive(row: dict):
         # Example logic for deep archive task
         print("DA" * 20)
-        pp(row) 
+        process_work(row['WorkName'], row['DIPDestPath'])
         print("DA" * 20)
 
     @task
